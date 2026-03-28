@@ -5,6 +5,11 @@
 # Claude Code Stop Hook — 在主代理即将停止时触发。
 # 根据当前状态智能决定：放行停止 or 阻止停止并注入续命指令。
 #
+# 同时检查所有信号源（不是互斥的）:
+#   - active_subagents  — 来自 state.sh 手动计数（SubagentStart/Stop hook）
+#   - active_teammates  — 来自 CC 原生 ~/.claude/teams/ config.json
+#   - pending_tasks     — 来自 CC 原生 ~/.claude/tasks/ 目录
+#
 # 输入 (stdin JSON):
 #   - session_id         — 会话 ID
 #   - transcript_path    — 对话记录路径
@@ -15,11 +20,12 @@
 #   - 放行: exit 0 (无输出)
 #   - 阻止: {"decision": "block", "hookSpecificOutput": {...}}
 #
-# 决策逻辑:
+# 决策逻辑（同时检查所有信号，不是互斥模式）:
 #   1. stop_hook_active=true → 追踪连续 block 次数，达到上限才放行
-#   2. 有活跃子代理 → 放行（等子代理完成）
-#   3. 续命次数 >= 上限 → 放行 + 通知
-#   4. 无活跃子代理 + 未达上限 → 阻止 + 注入续命指令
+#   2. active_subagents > 0 OR active_teammates > 0 → 放行（agent 还在干活）
+#   3. pending_tasks > 0 且无活跃 agent → 阻止（还有未完成 task，需要分配）
+#   4. 续命次数 >= 上限 → 放行 + 通知
+#   5. 全部 == 0 且未达上限 → 阻止 + 注入续命指令
 # ============================================================================
 
 set -euo pipefail
@@ -63,6 +69,95 @@ MAX_CONTINUATIONS="${MAX_CONTINUATIONS:-20}"
 # 连续阻止次数上限 — stop_hook_active=true 时不立即放行，
 # 而是允许连续 block 最多 N 次后才强制放行（默认 10）
 MAX_CONSECUTIVE_BLOCKS="${MAX_CONSECUTIVE_BLOCKS:-10}"
+
+# CC 原生 Agent Team 状态目录
+CC_TEAMS_DIR="${HOME}/.claude/teams"
+CC_TASKS_DIR="${HOME}/.claude/tasks"
+
+# ----------------------------------------------------------------------------
+# Agent Team 辅助函数
+# ----------------------------------------------------------------------------
+
+# _detect_team — 检测当前 session 是否是某个 team 的 lead
+# 参数:
+#   $1 — session_id
+# 输出: team name（找到时），空字符串（未找到时）
+_detect_team() {
+    local session_id="$1"
+
+    # 目录不存在则快速返回
+    if [[ ! -d "${CC_TEAMS_DIR}" ]]; then
+        echo ""
+        return 0
+    fi
+
+    local config_file team_dir team_name lead_sid
+    for config_file in "${CC_TEAMS_DIR}"/*/config.json; do
+        [[ -f "${config_file}" ]] || continue
+        lead_sid="$(jq -r '.leadSessionId // empty' "${config_file}" 2>/dev/null || true)"
+        if [[ "${lead_sid}" == "${session_id}" ]]; then
+            team_dir="$(dirname "${config_file}")"
+            team_name="$(basename "${team_dir}")"
+            echo "${team_name}"
+            return 0
+        fi
+    done
+
+    echo ""
+    return 0
+}
+
+# _get_active_teammates — 获取 team 活跃 teammate 数量（不含 lead）
+# 参数:
+#   $1 — team_name
+# 输出: 活跃 teammate 数量（整数）
+_get_active_teammates() {
+    local team_name="$1"
+    local config="${CC_TEAMS_DIR}/${team_name}/config.json"
+
+    if [[ ! -f "${config}" ]]; then
+        echo "0"
+        return 0
+    fi
+
+    local count
+    # members 数组包含 lead 自己，所以 -1；最小为 0
+    count="$(jq '[(.members | length) - 1, 0] | max' "${config}" 2>/dev/null || echo 0)"
+
+    # 确保返回有效整数
+    if [[ ! "${count}" =~ ^[0-9]+$ ]]; then
+        echo "0"
+    else
+        echo "${count}"
+    fi
+}
+
+# _get_pending_tasks — 获取 team 未完成 task 数量
+# 参数:
+#   $1 — team_name
+# 输出: 未完成 task 数量（整数）
+_get_pending_tasks() {
+    local team_name="$1"
+    local task_dir="${CC_TASKS_DIR}/${team_name}"
+
+    if [[ ! -d "${task_dir}" ]]; then
+        echo "0"
+        return 0
+    fi
+
+    local pending=0 task_file status
+    for task_file in "${task_dir}"/*.json; do
+        [[ -f "${task_file}" ]] || continue
+        # 跳过 highwatermark 等非 task 文件
+        [[ "$(basename "${task_file}")" == ".highwatermark" ]] && continue
+        status="$(jq -r '.status // "unknown"' "${task_file}" 2>/dev/null || echo "unknown")"
+        if [[ "${status}" != "completed" ]]; then
+            pending=$((pending + 1))
+        fi
+    done
+
+    echo "${pending}"
+}
 
 # ----------------------------------------------------------------------------
 # 辅助函数: 输出 JSON 并退出
@@ -162,16 +257,59 @@ main() {
     state_init "${session_id}"
 
     # -----------------------------------------------------------------------
-    # 检查 2: 活跃子代理数量
-    # 如果还有子代理在运行，主代理停下来是正常的（等待子代理完成）
+    # 检查 2: 收集所有信号源（同时检查，不是互斥模式）
+    #   - active_subagents  ← state.sh 手动计数
+    #   - active_teammates  ← CC 原生 ~/.claude/teams/ config.json
+    #   - pending_tasks     ← CC 原生 ~/.claude/tasks/ 目录
     # -----------------------------------------------------------------------
-    local active_subagents
-    active_subagents="$(state_get_active_subagents "${session_id}")"
-    log_info "活跃子代理数量: ${active_subagents}"
+    local detected_team=""
+    local active_teammates=0
+    local pending_tasks=0
+    local active_subagents=0
 
-    if [[ "${active_subagents}" -gt 0 ]]; then
-        log_info "还有 ${active_subagents} 个子代理在运行，放行停止"
+    # 2a: 读取手动追踪的 subagent 计数（始终检查）
+    active_subagents="$(state_get_active_subagents "${session_id}")"
+
+    # 2b: 检测 Agent Team（始终检查）
+    detected_team="$(_detect_team "${session_id}")"
+    if [[ -n "${detected_team}" ]]; then
+        active_teammates="$(_get_active_teammates "${detected_team}")"
+        pending_tasks="$(_get_pending_tasks "${detected_team}")"
+    fi
+
+    # 汇总日志：三个信号源全部可见
+    log_info "信号汇总: subagents=${active_subagents}, teammates=${active_teammates}, pending_tasks=${pending_tasks}, team=${detected_team:-none}"
+
+    # 2c: 有活跃 agent（subagent 或 teammate）→ 放行（agent 还在干活）
+    if [[ "${active_subagents}" -gt 0 ]] || [[ "${active_teammates}" -gt 0 ]]; then
+        log_info "还有活跃 agent (subagents=${active_subagents}, teammates=${active_teammates})，放行停止"
         allow_stop
+    fi
+
+    # 2d: 无活跃 agent，但有未完成 task → 需要续命（让 lead 继续分配）
+    #     走后面的续命流程
+
+    # 2e: 全部 == 0 → 真正完成（无 agent、无 pending task）
+    if [[ "${active_subagents}" -eq 0 ]] && [[ "${active_teammates}" -eq 0 ]] && [[ "${pending_tasks}" -eq 0 ]] && [[ -n "${detected_team}" ]]; then
+        log_info "全部完成 (team=${detected_team}, 所有信号为 0)，放行停止"
+
+        # 通知用户
+        local started_at
+        started_at="$(state_read "${session_id}" '.started_at' 2>/dev/null || echo 'unknown')"
+        local cont_count
+        cont_count="$(state_get_continuation_count "${session_id}")"
+        _notify "Agent Team 全部完成！
+团队: ${detected_team}
+会话: ${session_id}
+开始时间: ${started_at}
+续命次数: ${cont_count}" "team_complete" "${session_id}"
+
+        allow_stop
+    fi
+
+    # 到这里说明：无活跃 agent，但有 pending_tasks > 0（或非 team 模式的普通续命）
+    if [[ "${pending_tasks}" -gt 0 ]]; then
+        log_info "还有 ${pending_tasks} 个未完成任务，准备续命"
     fi
 
     # -----------------------------------------------------------------------
@@ -187,17 +325,21 @@ main() {
         # 通知用户
         local started_at
         started_at="$(state_read "${session_id}" '.started_at' 2>/dev/null || echo 'unknown')"
-        _notify "续命次数达到上限 (${MAX_CONTINUATIONS} 次)。
+        local notify_msg="续命次数达到上限 (${MAX_CONTINUATIONS} 次)。
 会话: ${session_id}
 开始时间: ${started_at}
-已自动停止，请检查任务完成情况。" "max_reached" "${session_id}"
+已自动停止，请检查任务完成情况。"
+        if [[ -n "${detected_team}" ]]; then
+            notify_msg="[Agent Team: ${detected_team}] ${notify_msg}
+未完成任务: ${pending_tasks}"
+        fi
+        _notify "${notify_msg}" "max_reached" "${session_id}"
 
         allow_stop
     fi
 
     # -----------------------------------------------------------------------
-    # 检查 4: 所有子代理已完成 + 续命次数未达上限
-    # → 阻止停止，注入续命指令
+    # 检查 4: 需要续命 — 阻止停止，注入续命指令
     # -----------------------------------------------------------------------
     state_increment_continuation "${session_id}"
     local new_count=$((continuation_count + 1))
@@ -206,21 +348,30 @@ main() {
 
     # 可选通知（由 NOTIFY_ON_CONTINUE 控制，后台发送不阻塞，重定向防止干扰 stdout）
     if [[ "${NOTIFY_ON_CONTINUE:-true}" == "true" ]]; then
-        _notify "自动续命第 ${new_count}/${MAX_CONTINUATIONS} 次
-会话: ${session_id}" "continue" "${session_id}" &>/dev/null &
+        local continue_msg="自动续命第 ${new_count}/${MAX_CONTINUATIONS} 次
+会话: ${session_id}"
+        if [[ -n "${detected_team}" ]]; then
+            continue_msg="[Agent Team: ${detected_team}] ${continue_msg}
+未完成任务: ${pending_tasks}"
+        fi
+        _notify "${continue_msg}" "continue" "${session_id}" &>/dev/null &
     fi
 
-    # 阻止停止并注入续命指令（优先从 prompts/stop-continue.md 读取模板）
+    # 阻止停止并注入续命指令（根据模式选择不同的 prompt 模板）
     local context_msg
-    local PROMPT_FILE="${SCRIPT_DIR}/../prompts/stop-continue.md"
+    local PROMPT_DIR="${SCRIPT_DIR}/../prompts"
+
+    local PROMPT_FILE="${PROMPT_DIR}/stop-continue.md"
     if [[ -f "${PROMPT_FILE}" ]]; then
         context_msg="$(cat "${PROMPT_FILE}")"
-        # Substitute {{count}} and {{max}} with actual values
-        context_msg="${context_msg//\{\{count\}\}/${new_count}}"
-        context_msg="${context_msg//\{\{max\}\}/${MAX_CONTINUATIONS}}"
     else
-        context_msg="继续执行下一个未完成的任务。第 ${new_count}/${MAX_CONTINUATIONS} 次续命。"
+        context_msg="继续执行下一个未完成的任务。第 {{count}}/{{max}} 次续命。"
     fi
+
+    # 替换通用占位符
+    context_msg="${context_msg//\{\{count\}\}/${new_count}}"
+    context_msg="${context_msg//\{\{max\}\}/${MAX_CONTINUATIONS}}"
+
     block_stop "${context_msg}"
 }
 

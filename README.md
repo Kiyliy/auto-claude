@@ -34,7 +34,7 @@ git clone https://github.com/Kiyliy/auto-claude.git
 
 ### 智能续命
 
-CC 主代理每次停止时触发 Stop Hook，接收包含 `session_id`、`stop_hook_active` 等字段的 JSON。Hook 按以下逻辑决策：
+CC 主代理每次停止时触发 Stop Hook，接收包含 `session_id`、`stop_hook_active` 等字段的 JSON。Hook **同时检查所有信号源**（subagent 计数、Agent Team 成员、未完成 task），综合决策：
 
 ```
 CC 停止
@@ -45,24 +45,48 @@ stop_hook_active = true ?
   YES              NO
   |                |
   v                v
-连续 block 计数+1   读取 session 状态
-  |                |
-  v                v
->= MAX_CONSECUTIVE   有活跃 subagent?
-_BLOCKS (默认10)?    |          |
-  |        |        YES         NO
-  YES      NO       |          |
-  |        |        v          v
-  v        |     放行 Stop   续命次数 >= MAX
-强制放行    |     (等待完成)  _CONTINUATIONS?
-重置计数    |                  |        |
-           |                 YES       NO
-           v                  |        |
-        继续正常判断 --------->|        v
-                              v     Block Stop
-                           放行 Stop  注入继续指令
-                           发送通知   count++
+连续 block 计数+1   重置连续计数
+  |
+  v
+>= MAX_CONSECUTIVE_BLOCKS (默认10)?
+  |        |
+  YES      NO
+  |        |
+  v        v
+强制放行  同时收集所有信号:
+重置计数    - active_subagents  (state.sh 计数)
+            - active_teammates  (~/.claude/teams/ config.json)
+            - pending_tasks     (~/.claude/tasks/ *.json)
+            |
+            v
+          subagents > 0 OR teammates > 0 ?
+            |               |
+           YES              NO
+            |               |
+            v               v
+          放行 Stop      team 模式 且 全部 == 0 ?
+          (agent在干活)     |               |
+                          YES              NO
+                           |               |
+                           v               v
+                        放行 Stop      续命次数 >= MAX
+                        +通知(完成)    _CONTINUATIONS?
+                                        |        |
+                                       YES       NO
+                                        |        |
+                                        v        v
+                                     放行 Stop  Block Stop
+                                     发送通知   注入继续指令
+                                                count++
 ```
+
+Stop Hook 读取 CC 的原生 Agent Team 状态文件，结合自有 subagent 计数，三个信号同时可见：
+
+| 信号 | 来源 | 说明 |
+|------|------|------|
+| `active_subagents` | `~/.auto-claude/state/{sid}.json` | SubagentStart/Stop hook 维护的计数 |
+| `active_teammates` | `~/.claude/teams/{name}/config.json` | CC 原生，`members.length - 1` |
+| `pending_tasks` | `~/.claude/tasks/{name}/*.json` | CC 原生，`status != "completed"` 的数量 |
 
 **关键参数：**
 
@@ -77,7 +101,13 @@ _BLOCKS (默认10)?    |          |
 | `SubagentStop` | 子代理完成 | `active_subagents--`，可选通知 |
 | `TeammateIdle` | 队友进入空闲 | Prompt Hook 判断是否真正完成，未完成则拒绝空闲 |
 
-Session 状态持久化在 `~/.auto-claude/state/{session_id}.json`，通过 `lib/state.sh` 读写。
+**状态数据来源（全部同时检查）：**
+
+| 数据 | 来源 | 维护方式 |
+|------|------|---------|
+| subagent 计数 | `~/.auto-claude/state/{session_id}.json` | SubagentStart/Stop hook 通过 `lib/state.sh` 读写 |
+| teammate 数量 | `~/.claude/teams/{name}/config.json` | CC 原生维护，只读 |
+| 未完成 task | `~/.claude/tasks/{name}/*.json` | CC 原生维护，只读 |
 
 ### Telegram 通知
 
