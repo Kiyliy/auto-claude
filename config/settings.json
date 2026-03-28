@@ -69,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash /path/to/auto-claude/hooks/notify.sh error 'Claude Code 运行出错，需要人工介入'"
+            "command": "bash -c 'SOCKET=${CHANNEL_SOCKET:-$HOME/.auto-claude/channel.sock}; [ -S \"$SOCKET\" ] && curl -s --max-time 5 --unix-socket \"$SOCKET\" -X POST http://localhost/notify -H \"Content-Type: application/json\" -d \"{\\\"message\\\":\\\"Claude Code 运行出错，需要人工介入\\\",\\\"event_type\\\":\\\"error\\\"}\" &>/dev/null || true'"
           }
         ]
       }

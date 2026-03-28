@@ -40,11 +40,22 @@ fi
 source "${LIB_DIR}/log.sh"
 # shellcheck source=../lib/state.sh
 source "${LIB_DIR}/state.sh"
-# shellcheck source=./notify.sh
-source "${SCRIPT_DIR}/notify.sh"
 
 # 设置 hook 名称（用于日志）
 _LOG_HOOK_NAME="stop-hook"
+
+# Channel socket 路径
+CHANNEL_SOCKET="${CHANNEL_SOCKET:-${HOME}/.auto-claude/channel.sock}"
+
+# 通过 daemon socket 发送通知（后台执行，不阻塞 hook）
+# 用法: _notify "消息" "event_type" "session_id"
+_notify() {
+    local msg="$1" evt="${2:-custom}" sid="${3:-}"
+    [[ -S "${CHANNEL_SOCKET}" ]] || return 0
+    local payload
+    payload=$(python3 -c "import json,sys;d={'message':sys.argv[1],'event_type':sys.argv[2]};sys.argv[3] and d.update(session_id=sys.argv[3]);print(json.dumps(d))" "${msg}" "${evt}" "${sid}" 2>/dev/null) || return 0
+    curl -s --max-time 5 --unix-socket "${CHANNEL_SOCKET}" -X POST "http://localhost/notify" -H "Content-Type: application/json" -d "${payload}" &>/dev/null &
+}
 
 # 最大续命次数（环境变量 > 配置文件 > 默认值 20）
 MAX_CONTINUATIONS="${MAX_CONTINUATIONS:-20}"
@@ -176,7 +187,7 @@ main() {
         # 通知用户
         local started_at
         started_at="$(state_read "${session_id}" '.started_at' 2>/dev/null || echo 'unknown')"
-        notify_telegram "续命次数达到上限 (${MAX_CONTINUATIONS} 次)。
+        _notify "续命次数达到上限 (${MAX_CONTINUATIONS} 次)。
 会话: ${session_id}
 开始时间: ${started_at}
 已自动停止，请检查任务完成情况。" "max_reached" "${session_id}"
@@ -195,7 +206,7 @@ main() {
 
     # 可选通知（由 NOTIFY_ON_CONTINUE 控制，后台发送不阻塞，重定向防止干扰 stdout）
     if [[ "${NOTIFY_ON_CONTINUE:-true}" == "true" ]]; then
-        notify_telegram "自动续命第 ${new_count}/${MAX_CONTINUATIONS} 次
+        _notify "自动续命第 ${new_count}/${MAX_CONTINUATIONS} 次
 会话: ${session_id}" "continue" "${session_id}" &>/dev/null &
     fi
 

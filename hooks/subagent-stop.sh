@@ -34,11 +34,21 @@ fi
 source "${LIB_DIR}/log.sh"
 # shellcheck source=../lib/state.sh
 source "${LIB_DIR}/state.sh"
-# shellcheck source=./notify.sh
-source "${SCRIPT_DIR}/notify.sh"
 
 # 设置 hook 名称
 _LOG_HOOK_NAME="subagent-stop"
+
+# Channel socket 路径
+CHANNEL_SOCKET="${CHANNEL_SOCKET:-${HOME}/.auto-claude/channel.sock}"
+
+# 通过 daemon socket 发送通知
+_notify() {
+    local msg="$1" evt="${2:-custom}" sid="${3:-}"
+    [[ -S "${CHANNEL_SOCKET}" ]] || return 0
+    local payload
+    payload=$(python3 -c "import json,sys;d={'message':sys.argv[1],'event_type':sys.argv[2]};sys.argv[3] and d.update(session_id=sys.argv[3]);print(json.dumps(d))" "${msg}" "${evt}" "${sid}" 2>/dev/null) || return 0
+    curl -s --max-time 5 --unix-socket "${CHANNEL_SOCKET}" -X POST "http://localhost/notify" -H "Content-Type: application/json" -d "${payload}" &>/dev/null &
+}
 
 # ----------------------------------------------------------------------------
 # 主流程
@@ -113,7 +123,7 @@ main() {
 
     # 可选: 发送 Telegram 通知（后台发送，重定向防止干扰）
     if [[ "${NOTIFY_ON_SUBAGENT:-false}" == "true" ]]; then
-        notify_telegram "子代理 ${agent_type} 已完成
+        _notify "子代理 ${agent_type} 已完成
 会话: ${session_id}
 剩余活跃: ${active_count}" "subagent" "${session_id}" &>/dev/null &
     fi

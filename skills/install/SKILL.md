@@ -119,19 +119,9 @@ ENVEOF
 
 如果选 2，分别问两个值，写入 config.env。
 
-## 第四(c)步：安装双向 Telegram Channel（可选）
+## 第四(c)步：安装 Channel daemon
 
-用 AskUserQuestion 问用户：
-
-> 是否启用双向 Telegram Channel？
->
-> 启用后，你可以从 Telegram 直接发消息给 CC，CC 也能回复你。
-> 不启用的话，通知功能仍然正常工作（单向推送）。
->
-> 1. 启用 — 安装 Channel MCP Server
-> 2. 跳过 — 只用单向通知
-
-**如果选 1（启用）：**
+Channel daemon 是必须的 -- 所有 Telegram 通知都通过它发送。
 
 ```bash
 cd "$AUTO_CLAUDE_DIR/channel"
@@ -144,9 +134,6 @@ echo "Channel 依赖安装完成"
 启动方式告知用户：
 - 自动启动：CC 启动时会根据 settings.json 中的 mcpServers 配置自动启动 Channel 服务
 - 或使用 `--channels` 参数：`claude --channels server:auto-claude-telegram`
-
-**如果选 2（跳过）：**
-跳过 Channel 安装。Hook 通知会直接 curl Telegram Bot API（路径 A），不影响续命功能。
 
 ## 第五步：设置 Hook 脚本权限
 
@@ -257,7 +244,7 @@ echo "2. 配置文件:"
 [ -f ~/.auto-claude/config.env ] && echo "config.env: OK" || echo "config.env: MISSING"
 echo ""
 echo "3. Hook 脚本:"
-for f in stop-hook.sh subagent-start.sh subagent-stop.sh notify.sh; do
+for f in stop-hook.sh subagent-start.sh subagent-stop.sh; do
   [ -x "$AUTO_CLAUDE_DIR/hooks/$f" ] && echo "$f: OK" || echo "$f: MISSING/NOT_EXECUTABLE"
 done
 echo ""

@@ -81,9 +81,7 @@ Session 状态持久化在 `~/.auto-claude/state/{session_id}.json`，通过 `li
 
 ### Telegram 通知
 
-**单向通知（始终可用）**
-
-Hook 脚本通过 `hooks/notify.sh` 直接调用 Telegram Bot API。无需额外服务，只需 `curl` 和正确的 Bot Token / Chat ID。
+所有通知通过 daemon 的 Unix socket（`~/.auto-claude/channel.sock`）发送。daemon 负责与 Telegram Bot API 的全部通信。
 
 通知事件：
 
@@ -99,7 +97,7 @@ Hook 脚本通过 `hooks/notify.sh` 直接调用 Telegram Bot API。无需额外
 
 基于 MCP Server 的双向通信。启用后 Telegram 消息会注入 CC 会话，CC 可直接回复。支持 Telegram 群组 Topics 做多 session 隔离。
 
-`notify.sh` 会自动检测 Channel daemon 是否在线（通过 Unix socket `~/.auto-claude/channel.sock`），在线走 socket，离线回退到直连 Telegram API。
+所有通知和消息收发都通过 daemon 的 Unix socket（`~/.auto-claude/channel.sock`）。
 
 ### 多 Session 支持
 
@@ -198,7 +196,7 @@ chmod +x auto-claude/hooks/*.sh
         "hooks": [
           {
             "type": "command",
-            "command": "/path/to/auto-claude/hooks/notify.sh error"
+            "command": "bash -c '[ -S ${CHANNEL_SOCKET:-$HOME/.auto-claude/channel.sock} ] && curl -s --unix-socket ${CHANNEL_SOCKET:-$HOME/.auto-claude/channel.sock} -X POST http://localhost/notify -H \"Content-Type: application/json\" -d \"{\\\"message\\\":\\\"CC error\\\",\\\"event_type\\\":\\\"error\\\"}\" || true'"
           }
         ]
       }
@@ -238,8 +236,7 @@ auto-claude/
 ├── hooks/                   # Hook 脚本
 │   ├── stop-hook.sh         # 主控：智能续命决策
 │   ├── subagent-start.sh    # 子代理启动追踪
-│   ├── subagent-stop.sh     # 子代理完成追踪
-│   └── notify.sh            # Telegram 通知封装
+│   └── subagent-stop.sh     # 子代理完成追踪
 ├── lib/                     # 共享库
 │   ├── state.sh             # 状态文件读写 (jq + flock)
 │   └── log.sh               # 日志接口
