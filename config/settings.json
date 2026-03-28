@@ -1,0 +1,78 @@
+{
+  "_comment": [
+    "Auto-Claude Hook 注册配置模板",
+    "将此配置合并到 .claude/settings.json 或 .claude/settings.local.json",
+    "注意: 请将 /path/to/auto-claude 替换为实际的 auto-claude 目录绝对路径",
+    "安装技能会自动完成路径替换和合并: /auto-claude-install"
+  ],
+
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+
+  "mcpServers": {
+    "auto-claude-telegram": {
+      "_comment": "双向 Telegram Channel — 需要先 cd channel && npm install",
+      "command": "npx",
+      "args": ["tsx", "/path/to/auto-claude/channel/src/index.ts"]
+    }
+  },
+
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /path/to/auto-claude/hooks/stop-hook.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /path/to/auto-claude/hooks/subagent-start.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /path/to/auto-claude/hooks/subagent-stop.sh"
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "检查这个 teammate 是否真正完成了分配给它的所有任务。仔细审查它的输出和工作成果：\n1. 是否所有要求的功能都已实现？\n2. 是否有遗漏的边界情况或错误处理？\n3. 是否有未完成的 TODO 或占位符代码？\n\n如果还有未完成的工作，返回 {\"ok\": false, \"reason\": \"具体描述未完成的工作内容\"}，并给出下一步指示。\n如果确实已经完成了所有工作，返回 {\"ok\": true}。"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /path/to/auto-claude/hooks/notify.sh error 'Claude Code 运行出错，需要人工介入'"
+          }
+        ]
+      }
+    ]
+  }
+}
