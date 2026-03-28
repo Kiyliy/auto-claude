@@ -170,13 +170,12 @@ allow_stop() {
 }
 
 # 阻止停止（注入续命指令，让 CC 继续工作）
-# 使用 jq 构造 JSON，避免字符串注入
+# 使用 exit 2 + stderr 消息，CC 读取 stderr 后继续工作
 block_stop() {
     local context_message="$1"
     log_info "决策: 阻止停止，注入续命指令"
-    jq -n --arg ctx "${context_message}" \
-        '{"decision":"block","hookSpecificOutput":{"hookEventName":"Stop","additionalContext":$ctx}}'
-    exit 0
+    echo "${context_message}" >&2
+    exit 2
 }
 
 # ----------------------------------------------------------------------------
