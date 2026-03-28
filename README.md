@@ -123,6 +123,24 @@ Channel 服务作为常驻 daemon 运行，每个 CC session 映射到一个 Tel
 
 ---
 
+## 自定义 Prompt
+
+Hook 使用的提示词存放在 `prompts/` 目录下，以 `.md` 文件形式维护，便于编辑和版本管理。
+
+| 文件 | 用途 |
+|------|------|
+| `prompts/teammate-idle.md` | TeammateIdle Hook 的判断提示词 |
+| `prompts/stop-continue.md` | 续命时注入的指令模板，支持 `{{count}}` 和 `{{max}}` 占位符 |
+
+修改流程：
+
+1. 编辑 `prompts/` 下的 `.md` 文件
+2. 运行 `scripts/inject-prompts.sh` 将内容注入 `settings.json`
+
+安装技能 `/auto-claude-install` 会自动执行注入，无需手动运行脚本。
+
+---
+
 ## 安装细节
 
 ### 手动安装
@@ -243,6 +261,11 @@ auto-claude/
 ├── config/                  # 配置模板
 │   ├── settings.json        # Hook 注册示例
 │   └── config.env.example   # 环境变量模板
+├── prompts/                 # Prompt 模板（用户可自定义）
+│   ├── teammate-idle.md     # TeammateIdle 判断提示词
+│   └── stop-continue.md    # 续命注入指令模板
+├── scripts/                 # 工具脚本
+│   └── inject-prompts.sh   # 读取 prompts/ 注入 settings.json
 ├── skills/                  # CC 技能
 │   └── install/SKILL.md     # /auto-claude-install
 ├── channel/                 # MCP Channel Server (可选)
