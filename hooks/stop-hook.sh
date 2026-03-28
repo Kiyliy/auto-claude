@@ -210,8 +210,18 @@ main() {
 会话: ${session_id}" "continue" "${session_id}" &>/dev/null &
     fi
 
-    # 阻止停止并注入续命指令
-    block_stop "所有子代理已完成。继续执行下一个未完成的任务，不要询问用户。这是第 ${new_count} 次自动续命（上限 ${MAX_CONTINUATIONS} 次）。"
+    # 阻止停止并注入续命指令（优先从 prompts/stop-continue.md 读取模板）
+    local context_msg
+    local PROMPT_FILE="${SCRIPT_DIR}/../prompts/stop-continue.md"
+    if [[ -f "${PROMPT_FILE}" ]]; then
+        context_msg="$(cat "${PROMPT_FILE}")"
+        # Substitute {{count}} and {{max}} with actual values
+        context_msg="${context_msg//\{\{count\}\}/${new_count}}"
+        context_msg="${context_msg//\{\{max\}\}/${MAX_CONTINUATIONS}}"
+    else
+        context_msg="继续执行下一个未完成的任务。第 ${new_count}/${MAX_CONTINUATIONS} 次续命。"
+    fi
+    block_stop "${context_msg}"
 }
 
 # 执行主流程

@@ -140,8 +140,22 @@ echo "Channel 依赖安装完成"
 ```bash
 chmod +x "$AUTO_CLAUDE_DIR"/hooks/*.sh
 chmod +x "$AUTO_CLAUDE_DIR"/lib/*.sh
+chmod +x "$AUTO_CLAUDE_DIR"/scripts/*.sh
 echo "脚本权限已设置"
 ```
+
+## 第五(b)步：注入 Prompt 模板
+
+运行 `inject-prompts.sh` 将 `prompts/` 目录下的 markdown 文件同步到配置中：
+
+```bash
+bash "$AUTO_CLAUDE_DIR/scripts/inject-prompts.sh"
+```
+
+这会将 `prompts/teammate-idle.md` 的内容注入到 `config/settings.json` 的 TeammateIdle hook prompt 字段。
+`prompts/stop-continue.md` 由 `stop-hook.sh` 在运行时直接读取。
+
+用户可以通过编辑 `prompts/` 目录下的 `.md` 文件来自定义 prompt 内容，修改后重新运行 `inject-prompts.sh` 即可生效。
 
 ## 第六步：注册 Hook 到 Claude Code Settings
 
