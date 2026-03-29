@@ -97,38 +97,7 @@ main() {
     [[ "${NOTIFY_ON_CONTINUE:-true}" == "true" ]] && \
         _notify "续命 ${new_count}/${MAX_CONTINUATIONS}" "continue" "${session_id}" &>/dev/null &
 
-    # --- 读取评分趋势 ---
-    local trend=""
-    if [[ -n "${cwd}" ]]; then
-        local results_file="${cwd}/.auto-claude/results.jsonl"
-        if [[ -f "${results_file}" ]]; then
-            trend="$(python3 -c "
-import json, sys
-lines = open(sys.argv[1]).readlines()
-entries = [json.loads(l) for l in lines[-5:] if l.strip()]
-if entries:
-    e = entries[-1]
-    totals = [x.get('total',0) for x in entries]
-    trend = ' → '.join(str(t) for t in totals)
-    worst = ', '.join(e.get('worst',[]))
-    print(f'上一轮评分：{e.get(\"total\",\"?\")}/100\n趋势：{trend}\n最低维度：{worst}\n优先改进最低维度。')
-" "${results_file}" 2>/dev/null)" || true
-        fi
-    fi
-
-    # --- 注入续命指令 ---
-    local prompt_file="${SCRIPT_DIR}/../prompts/continue.md"
-    local msg
-    if [[ -f "${prompt_file}" ]]; then
-        msg="$(cat "${prompt_file}")"
-        msg="${msg//\{\{count\}\}/${new_count}}"
-        msg="${msg//\{\{max\}\}/${MAX_CONTINUATIONS}}"
-        msg="${msg//\{\{trend\}\}/${trend}}"
-    else
-        msg="继续工作。第 ${new_count}/${MAX_CONTINUATIONS} 次续命。"
-    fi
-
-    block_stop "${msg}"
+    block_stop "Continue working. Auto-continue ${new_count}/${MAX_CONTINUATIONS}."
 }
 
 main
