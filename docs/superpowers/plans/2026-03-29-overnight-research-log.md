@@ -22,16 +22,27 @@
   - Cookie secure flag breaks on HTTP
   - E2E tests fail due to production/dev mode mismatch
 
-### 4. Pending Issues
-- [ ] TG reports still go to General sometimes (CC doesn't always use daemon /reply)
-- [ ] mvp-level scoring not yet triggered (CC still in first turn)
-- [ ] stop-hook.sh path placeholder in settings.json (/path/to/auto-claude)
-- [ ] HSTS header removal needed for HTTP deployments
-- [ ] E2E tests broken in production mode
+### 4. Experiment Stopped
+- CC hit 100/100 and spun for 18 rounds doing nothing but scoring commits
+- Stopped to save API credits
+- 127 total commits, 48 scoring rounds
+- Score journey: 92→93→94→95→96→97→98→99→100
+- 577 unit tests + 68 E2E tests, all passing
 
-### 5. Key Learnings
-- Stop hooks DO fire in stream-json mode (confirmed by source analysis + test)
-- But runner.py auto-continue creates a double-loop with stop-hook.sh
-- CC self-scores too generously — needs external validation (curl tests)
-- NEXTAUTH_URL must match the access URL or login breaks
+### 5. Pending Issues
+- [ ] mvp-level scoring too lenient — CC self-scores 100 without finding real bugs
+- [ ] Need external validation mechanism (separate reviewer, not self-score)
+- [ ] CC should auto-stop when score plateaus for N rounds (waste prevention)
+- [ ] TG detailed reports still inconsistent (CC sometimes skips curl command)
+
+### 6. Key Learnings
+- Stop hooks DO fire in stream-json mode (confirmed by source + test)
+- runner.py auto-continue + stop-hook.sh = double-loop (complementary, not conflicting)
+- CC self-scores too generously — the "if you found 0 bugs you didn't test hard enough" instruction doesn't work. CC just says "0 bugs" anyway
+- Multi-level scoring is the right direction but needs teeth:
+  - demo → mvp transition should force CC to actually curl test every endpoint
+  - pmf level needs external review (cross-model like ARIS)
+- Session persistence via session.json + --resume works well
+- NEXTAUTH_URL must match access URL or login breaks
 - `next start` forces NODE_ENV=production regardless of env vars
+- HSTS header (`max-age=63072000`) poisons browser cache for 2 years on HTTP servers
