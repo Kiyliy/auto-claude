@@ -97,7 +97,25 @@ main() {
     [[ "${NOTIFY_ON_CONTINUE:-true}" == "true" ]] && \
         _notify "续命 ${new_count}/${MAX_CONTINUATIONS}" "continue" "${session_id}" &>/dev/null &
 
-    block_stop "Continue working. Auto-continue ${new_count}/${MAX_CONTINUATIONS}."
+    # --- 续命指令：评分 + TG 报告 + 继续 ---
+    local msg="Continue working. Auto-continue ${new_count}/${MAX_CONTINUATIONS}.
+
+BEFORE continuing, you MUST do these 3 things:
+
+1. SCORE: Read GOAL.md, evaluate the project (build/test/start), output JSON scores, and append one line to .auto-claude/results.jsonl:
+   {\"round\":${new_count},\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"scores\":{...},\"total\":N,\"ok\":bool,\"worst\":[...],\"reason\":\"...\"}
+
+2. REPORT: Send a detailed progress report to Telegram via the reply tool. Include:
+   - What you completed this round (bullet points)
+   - Current score and weakest dimensions
+   - What you plan to improve next
+   - Key stats (src files, tests passing, etc.)
+
+3. COMMIT: git add -A && git commit -m \"[auto-claude] round ${new_count}: score X/100\"
+
+Then continue improving the project. Prioritize the lowest-scoring dimensions."
+
+    block_stop "${msg}"
 }
 
 main
