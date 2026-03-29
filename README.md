@@ -1,363 +1,145 @@
 # auto-claude
 
-> Extend Claude Code's continuous working capability with smart hooks and Telegram integration.
-
-Auto-Claude 是一组 Claude Code (CC) 的 Hook 脚本和可选的 MCP Channel 服务，让 CC 在完成阶段性工作后自动判断是否继续、通过 Telegram 推送关键事件、并支持从 Telegram 反向与 CC 对话。它不是独立应用，而是基于 CC Hook 系统的插件式增强。
-
----
+> Claude Code 持续工作增强套件 — 评分驱动的自动迭代 + Telegram 双向通信
 
 ## 核心能力
 
 | 能力 | 说明 |
 |------|------|
-| **智能续命** | Stop Hook 拦截 CC 停止事件，结合 Subagent 生命周期和续命计数，自动决定是否注入继续指令 |
-| **Telegram 通知** | 任务完成、错误、续命等关键事件通过 Telegram Bot 推送，无需额外服务 |
-| **双向 Channel** | 可选的 MCP Server，支持从 Telegram 群组/Topic 向 CC 发送指令并接收回复 |
-
----
+| **评分驱动迭代** | Stop Hook 触发 Haiku 评分（10 维度，满分 100），未达 90 分自动继续改进 |
+| **智能续命** | 续命计数 + 连续 block 计数，防无限循环，达上限自动停止 |
+| **Telegram 通知** | 续命、完成、错误等事件通过 Telegram Bot 推送 |
+| **Telegram 双向** | 从 Telegram 向 CC 发指令并接收回复，支持群组 Topics 多 session 隔离 |
 
 ## 快速开始
 
 ```bash
 # 1. Clone
 git clone https://github.com/Kiyliy/auto-claude.git
+cd auto-claude
 
-# 2. 在 Claude Code 中运行安装技能
-/auto-claude-install
+# 2. 配置
+mkdir -p ~/.auto-claude/{state,logs}
+cp config/config.env.example ~/.auto-claude/config.env
+# 编辑 config.env，填写 TG_BOT_TOKEN 和 TG_CHAT_ID
+
+# 3. 注入评分 prompt 到 settings.json
+bash scripts/inject-prompts.sh
+
+# 4. 启动 Telegram daemon
+cd channel && npm install && cd ..
+npx tsx channel/src/daemon.ts &
+
+# 5. 运行
+python3 scripts/runner.py
 ```
-
-安装技能会自动完成：创建 `~/.auto-claude/` 目录、交互式配置 Telegram 凭据、注册 Hook 到 settings.json、验证安装结果。
-
----
 
 ## 工作原理
 
-### 智能续命
+### 两层续命
 
-CC 主代理每次停止时触发 Stop Hook，接收包含 `session_id`、`stop_hook_active` 等字段的 JSON。Hook **同时检查所有信号源**（subagent 计数、Agent Team 成员、未完成 task），综合决策：
+**Hook 层**（每次 CC 想停时触发）：
+1. `scoring.md` prompt hook — Haiku 评估 10 个维度，< 90 分则拒绝停止
+2. `stop-hook.sh` command hook — 续命计数 + block/allow 控制
 
-```
-CC 停止
-  |
-  v
-stop_hook_active = true ?
-  |                |
-  YES              NO
-  |                |
-  v                v
-连续 block 计数+1   重置连续计数
-  |
-  v
->= MAX_CONSECUTIVE_BLOCKS (默认10)?
-  |        |
-  YES      NO
-  |        |
-  v        v
-强制放行  同时收集所有信号:
-重置计数    - active_subagents  (state.sh 计数)
-            - active_teammates  (~/.claude/teams/ config.json)
-            - pending_tasks     (~/.claude/tasks/ *.json)
-            |
-            v
-          subagents > 0 OR teammates > 0 ?
-            |               |
-           YES              NO
-            |               |
-            v               v
-          放行 Stop      team 模式 且 全部 == 0 ?
-          (agent在干活)     |               |
-                          YES              NO
-                           |               |
-                           v               v
-                        放行 Stop      续命次数 >= MAX
-                        +通知(完成)    _CONTINUATIONS?
-                                        |        |
-                                       YES       NO
-                                        |        |
-                                        v        v
-                                     放行 Stop  Block Stop
-                                     发送通知   注入继续指令
-                                                count++
-```
+**Runner 层**（stream-json 模式）：
+- CC 产出 result → runner.py 自动发送下一条指令
+- TG 消息轮询 → 用户消息优先注入 CC
+- 心跳检测 → 10 分钟无活动自动唤醒
 
-Stop Hook 读取 CC 的原生 Agent Team 状态文件，结合自有 subagent 计数，三个信号同时可见：
+### 评分维度
 
-| 信号 | 来源 | 说明 |
-|------|------|------|
-| `active_subagents` | `~/.auto-claude/state/{sid}.json` | SubagentStart/Stop hook 维护的计数 |
-| `active_teammates` | `~/.claude/teams/{name}/config.json` | CC 原生，`members.length - 1` |
-| `pending_tasks` | `~/.claude/tasks/{name}/*.json` | CC 原生，`status != "completed"` 的数量 |
+| # | 维度 | 要点 |
+|---|------|------|
+| 1 | 功能完整性 | 需求逐条核对，无死链 |
+| 2 | 前端质量 | 布局/响应式/交互/视觉一致性 |
+| 3 | 运行时稳定性 | 控制台零报错，刷新正常 |
+| 4 | 代码质量 | 零 lint 警告，类型安全 |
+| 5 | 测试覆盖 | 核心 API + E2E 主流程 |
+| 6 | 错误处理 | loading/error/empty 三态 |
+| 7 | 安全性 | 环境变量/输入校验/认证 |
+| 8 | 文档 | README + .env.example + API |
+| 9 | 数据层 | Schema + 索引 + 种子数据 |
+| 10 | 可运行性 | 一键安装启动 |
 
-**关键参数：**
-
-- `MAX_CONSECUTIVE_BLOCKS` -- 连续 block 上限（默认 10）。CC 被 block 后再次停止时 `stop_hook_active=true`，计数累加；未达上限则可继续 block，达到上限则强制放行一轮。这意味着 CC 可以一口气连续干 10 轮不停歇。
-- `MAX_CONTINUATIONS` -- 单 session 总续命上限（默认 20）。达到后彻底停止并通知。
-
-**Subagent 生命周期追踪：**
-
-| Hook | 触发时机 | 动作 |
-|------|---------|------|
-| `SubagentStart` | 子代理启动 | `active_subagents++`，记录启动时间 |
-| `SubagentStop` | 子代理完成 | `active_subagents--`，可选通知 |
-| `TeammateIdle` | 队友进入空闲 | Prompt Hook 判断是否真正完成，未完成则拒绝空闲 |
-
-**状态数据来源（全部同时检查）：**
-
-| 数据 | 来源 | 维护方式 |
-|------|------|---------|
-| subagent 计数 | `~/.auto-claude/state/{session_id}.json` | SubagentStart/Stop hook 通过 `lib/state.sh` 读写 |
-| teammate 数量 | `~/.claude/teams/{name}/config.json` | CC 原生维护，只读 |
-| 未完成 task | `~/.claude/tasks/{name}/*.json` | CC 原生维护，只读 |
-
-### Telegram 通知
-
-所有通知通过 daemon 的 Unix socket（`~/.auto-claude/channel.sock`）发送。daemon 负责与 Telegram Bot API 的全部通信。
-
-通知事件：
-
-| 事件 | 内容 | 默认 |
-|------|------|------|
-| Stop（最终放行） | 任务完成，用时 X 分钟，续命 N 次 | 开启 |
-| StopFailure | CC 出错，需人工介入 | 开启 |
-| 续命触发 | 自动续命第 N 次 | `NOTIFY_ON_CONTINUE` 控制 |
-| SubagentStop | 子代理完成 | `NOTIFY_ON_SUBAGENT` 控制 |
-| 续命上限 | 续命次数达到上限，已停止 | 开启 |
-
-**双向 Channel（可选）**
-
-基于 MCP Server 的双向通信。启用后 Telegram 消息会注入 CC 会话，CC 可直接回复。支持 Telegram 群组 Topics 做多 session 隔离。
-
-所有通知和消息收发都通过 daemon 的 Unix socket（`~/.auto-claude/channel.sock`）。
-
-### 多 Session 支持
-
-Channel 服务作为常驻 daemon 运行，每个 CC session 映射到一个 Telegram Topic。不同 session 的消息互不干扰，适合同时运行多个 CC 实例的场景。
-
----
-
-## 配置
-
-`~/.auto-claude/config.env` 变量列表：
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `TG_BOT_TOKEN` | -- | Telegram Bot Token，必填 |
-| `TG_CHAT_ID` | -- | 接收通知的 Chat ID，必填 |
-| `MAX_CONTINUATIONS` | `20` | 单 session 最大续命次数 |
-| `MAX_CONSECUTIVE_BLOCKS` | `10` | 连续 block 上限，值越大一口气干更多轮 |
-| `NOTIFY_ON_SUBAGENT` | `false` | 子代理完成时是否通知（并行多时建议关闭） |
-| `NOTIFY_ON_CONTINUE` | `true` | 每次续命时是否通知 |
-| `CHANNEL_SOCKET` | `~/.auto-claude/channel.sock` | Channel daemon Unix socket 路径 |
-| `STATE_DIR` | `~/.auto-claude/state` | 状态文件目录 |
-| `LOG_DIR` | `~/.auto-claude/logs` | 日志目录 |
-
----
-
-## 自定义 Prompt
-
-Hook 使用的提示词存放在 `prompts/` 目录下，以 `.md` 文件形式维护，便于编辑和版本管理。
-
-| 文件 | 用途 |
-|------|------|
-| `prompts/teammate-idle.md` | TeammateIdle Hook 的判断提示词 |
-| `prompts/stop-continue.md` | 续命时注入的指令模板，支持 `{{count}}` 和 `{{max}}` 占位符 |
-
-修改流程：
-
-1. 编辑 `prompts/` 下的 `.md` 文件
-2. 运行 `scripts/inject-prompts.sh` 将内容注入 `settings.json`
-
-安装技能 `/auto-claude-install` 会自动执行注入，无需手动运行脚本。
-
----
-
-## 安装细节
-
-### 手动安装
-
-```bash
-# 创建目录
-mkdir -p ~/.auto-claude/{state,logs}
-
-# 复制并编辑配置
-cp auto-claude/config/config.env.example ~/.auto-claude/config.env
-vim ~/.auto-claude/config.env
-
-# 设置权限
-chmod +x auto-claude/hooks/*.sh
-```
-
-### Hook 注册
-
-将以下内容合并到 `.claude/settings.local.json`（路径替换为实际绝对路径）：
-
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/path/to/auto-claude/hooks/stop-hook.sh"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/path/to/auto-claude/hooks/subagent-start.sh"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/path/to/auto-claude/hooks/subagent-stop.sh"
-          }
-        ]
-      }
-    ],
-    "TeammateIdle": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "检查这个 teammate 是否完成了分配的任务。未完成返回 {\"ok\": false, \"reason\": \"...\"}, 已完成返回 {\"ok\": true}。"
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash -c '[ -S ${CHANNEL_SOCKET:-$HOME/.auto-claude/channel.sock} ] && curl -s --unix-socket ${CHANNEL_SOCKET:-$HOME/.auto-claude/channel.sock} -X POST http://localhost/notify -H \"Content-Type: application/json\" -d \"{\\\"message\\\":\\\"CC error\\\",\\\"event_type\\\":\\\"error\\\"}\" || true'"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-### Channel 服务（可选）
-
-```bash
-cd auto-claude/channel
-npm install
-```
-
-注册 MCP Server（合并到 `.claude/settings.local.json`）：
-
-```json
-{
-  "mcpServers": {
-    "auto-claude-telegram": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/auto-claude/channel/src/index.ts"]
-    }
-  }
-}
-```
-
-CC 启动时会自动拉起 Channel 服务。
-
----
+目标 90 分。评分前必须跑 build、测试、启动验证。
 
 ## 项目结构
 
 ```
 auto-claude/
-├── hooks/                   # Hook 脚本
-│   ├── stop-hook.sh         # 主控：智能续命决策
-│   ├── subagent-start.sh    # 子代理启动追踪
-│   └── subagent-stop.sh     # 子代理完成追踪
-├── lib/                     # 共享库
-│   ├── state.sh             # 状态文件读写 (jq + flock)
-│   └── log.sh               # 日志接口
-├── config/                  # 配置模板
-│   ├── settings.json        # Hook 注册示例
-│   └── config.env.example   # 环境变量模板
-├── prompts/                 # Prompt 模板（用户可自定义）
-│   ├── teammate-idle.md     # TeammateIdle 判断提示词
-│   └── stop-continue.md    # 续命注入指令模板
-├── scripts/                 # 工具脚本
-│   └── inject-prompts.sh   # 读取 prompts/ 注入 settings.json
-├── skills/                  # CC 技能
-│   └── install/SKILL.md     # /auto-claude-install
-├── channel/                 # MCP Channel Server (可选)
-│   ├── src/
-│   ├── package.json
-│   └── tsconfig.json
-├── SOUL.md                  # 设计文档
-└── README.md
+├── scripts/
+│   ├── runner.py              # 主运行器（stream-json 模式）
+│   └── inject-prompts.sh      # 注入 prompts/ 到 settings.json
+├── hooks/
+│   └── stop-hook.sh           # 续命控制器
+├── prompts/
+│   ├── scoring.md             # 质量评分 prompt（可自定义）
+│   ├── continue.md            # 续命指令模板
+│   └── teammate-idle.md       # 队友完成检查
+├── channel/
+│   └── src/
+│       ├── daemon.ts          # TG daemon
+│       ├── config.ts          # 配置
+│       └── telegram.ts        # TG API
+├── config/
+│   ├── settings.json          # Hook 注册模板
+│   ├── config.env.example     # 环境变量
+│   └── mcp-config.example.json
+├── lib/
+│   ├── state.sh               # Session 状态
+│   └── log.sh                 # 日志
+└── LICENSE
 ```
 
----
+## 配置
 
-## FAQ
+`~/.auto-claude/config.env`:
 
-### Hook 没触发？
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `TG_BOT_TOKEN` | -- | Telegram Bot Token（必填） |
+| `TG_CHAT_ID` | -- | Chat ID（必填） |
+| `MAX_CONTINUATIONS` | 20 | 总续命上限 |
+| `MAX_CONSECUTIVE_BLOCKS` | 10 | 连续 block 上限 |
+| `NOTIFY_ON_CONTINUE` | true | 续命时是否通知 |
 
-1. 运行 `/hooks` 确认 Hook 已注册
-2. 检查脚本权限：`chmod +x hooks/*.sh`
-3. 确认 settings.json 中使用的是绝对路径
-4. 查看日志：`tail -f ~/.auto-claude/logs/auto-claude.log`
+## 自定义评分标准
 
-### 出现无限循环？
-
-三层保护：`consecutive_blocks`（连续上限，默认 10 次后放行）、`max_continuations`（总上限，默认 20 次后停止）、`session_id` 字符白名单防路径穿越。手动恢复：
+编辑 `prompts/scoring.md`，修改维度和权重，然后：
 
 ```bash
-rm ~/.auto-claude/state/*.json
+bash scripts/inject-prompts.sh
 ```
 
-### Telegram 收不到通知？
+## Daemon API
+
+Unix socket `~/.auto-claude/channel.sock`:
 
 ```bash
-# 手动测试连通性
-source ~/.auto-claude/config.env
-curl -s "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-  -d chat_id="${TG_CHAT_ID}" -d text="test"
+# 健康检查
+curl --unix-socket ~/.auto-claude/channel.sock http://localhost/health
+
+# 发送通知
+curl --unix-socket ~/.auto-claude/channel.sock -X POST http://localhost/notify \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"test","event_type":"info"}'
+
+# 注册 session
+curl --unix-socket ~/.auto-claude/channel.sock -X POST http://localhost/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{"session_id":"abc123"}'
 ```
-
-确认 Token/Chat ID 正确、服务器能访问 `api.telegram.org`、bot 未被 block。
-
-### 如何查看日志？
-
-```bash
-tail -f ~/.auto-claude/logs/auto-claude.log        # 实时
-grep "\[ERROR\]" ~/.auto-claude/logs/auto-claude.log  # 按级别
-```
-
-日志格式：`[timestamp] [LEVEL] [hook_name] message`
-
----
 
 ## 前置条件
 
 | 依赖 | 说明 |
 |------|------|
-| Claude Code | CLI 已安装 (`claude --version`) |
-| jq | JSON 处理 (`apt install jq` / `brew install jq`) |
-| curl | 调用 Telegram API（通常系统自带） |
-| Node.js | 仅 Channel 服务需要 |
-
----
+| Claude Code | `claude --version` |
+| jq | `apt install jq` |
+| Python 3 | runner.py |
+| Node.js | channel daemon |
 
 ## License
 
-MIT -- see [LICENSE](LICENSE)
+MIT
