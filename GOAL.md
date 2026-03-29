@@ -3,6 +3,9 @@
 ## Goal
 Build a pixel-perfect Twitter/X clone. UI must closely match real Twitter (x.com). Production-ready quality.
 
+## Level
+mvp
+
 ## Tech Stack
 Next.js 15 + TypeScript + Tailwind CSS + Prisma + SQLite
 
