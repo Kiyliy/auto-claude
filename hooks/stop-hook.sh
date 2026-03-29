@@ -54,9 +54,10 @@ main() {
     [[ ! -t 0 ]] && input="$(cat)"
     [[ -z "${input}" ]] && allow_stop
 
-    local session_id stop_hook_active
+    local session_id stop_hook_active cwd
     session_id="$(echo "${input}" | jq -r '.session_id // empty' 2>/dev/null)" || true
     stop_hook_active="$(echo "${input}" | jq -r '.stop_hook_active // empty' 2>/dev/null)" || true
+    cwd="$(echo "${input}" | jq -r '.cwd // empty' 2>/dev/null)" || true
 
     [[ -z "${session_id}" ]] && allow_stop
 
@@ -96,6 +97,25 @@ main() {
     [[ "${NOTIFY_ON_CONTINUE:-true}" == "true" ]] && \
         _notify "续命 ${new_count}/${MAX_CONTINUATIONS}" "continue" "${session_id}" &>/dev/null &
 
+    # --- 读取评分趋势 ---
+    local trend=""
+    if [[ -n "${cwd}" ]]; then
+        local results_file="${cwd}/.auto-claude/results.jsonl"
+        if [[ -f "${results_file}" ]]; then
+            trend="$(python3 -c "
+import json, sys
+lines = open(sys.argv[1]).readlines()
+entries = [json.loads(l) for l in lines[-5:] if l.strip()]
+if entries:
+    e = entries[-1]
+    totals = [x.get('total',0) for x in entries]
+    trend = ' → '.join(str(t) for t in totals)
+    worst = ', '.join(e.get('worst',[]))
+    print(f'上一轮评分：{e.get(\"total\",\"?\")}/100\n趋势：{trend}\n最低维度：{worst}\n优先改进最低维度。')
+" "${results_file}" 2>/dev/null)" || true
+        fi
+    fi
+
     # --- 注入续命指令 ---
     local prompt_file="${SCRIPT_DIR}/../prompts/continue.md"
     local msg
@@ -103,6 +123,7 @@ main() {
         msg="$(cat "${prompt_file}")"
         msg="${msg//\{\{count\}\}/${new_count}}"
         msg="${msg//\{\{max\}\}/${MAX_CONTINUATIONS}}"
+        msg="${msg//\{\{trend\}\}/${trend}}"
     else
         msg="继续工作。第 ${new_count}/${MAX_CONTINUATIONS} 次续命。"
     fi

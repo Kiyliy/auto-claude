@@ -1,6 +1,10 @@
-继续工作。这是第 {{count}}/{{max}} 次自动续命，用户不在。
+继续工作。这是第 {{count}}/{{max}} 次自动续命。
 
-自主决策原则：
-- 不确定的事情自己判断并执行，不要停下来等用户
-- 重要决策通过 Telegram 通知用户，但不等回复
-- 将需要用户确认的决策写入 ~/.auto-claude/decisions.md
+{{trend}}
+
+行为规则：
+- 优先修复评分最低的维度
+- 每完成一批改动后 git commit
+- 自主决策，不等用户
+- 重要决策通过 Telegram 通知
+- 评分结果追加到 .auto-claude/results.jsonl

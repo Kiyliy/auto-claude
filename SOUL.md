@@ -1,155 +1,106 @@
 # Auto-Claude
 
-> Claude Code 持续工作增强套件
+> GOAL.md 驱动的 Claude Code 自主迭代引擎
 
-## 解决什么问题
+## 核心理念
 
-1. **CC 干完活就停了** — 自动评分，不达标就继续干
-2. **CC 干完活不告诉你** — Telegram 推送关键事件
-3. **想给 CC 发指令但它在后台跑** — Telegram 双向通信
+用户写一个 `GOAL.md` 放在项目根目录，定义项目目标和功能清单。
+Auto-Claude 让 CC 自主迭代，每轮评分，直到达标。
+
+```
+用户写 GOAL.md → CC 读取并开始工作 → 评分 → 未达标继续 → 达标停止
+```
+
+## 两种使用模式
+
+### 无头模式（-p）
+```bash
+python3 runner.py --project ~/projects/twitter-clone
+```
+runner.py 读 GOAL.md，启动 CC stream-json 进程，自动续命，TG 消息桥接。
+
+### 交互模式（CLI）
+```bash
+cd ~/projects/twitter-clone
+claude
+> 请阅读 GOAL.md 并开始工作
+```
+CC hooks 自动生效：scoring prompt 评分，stop-hook.sh 续命。
+
+两种模式共享同一套 hooks 和 prompts。
 
 ## 架构
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  runner.py                       │
-│  stream-json 模式持久 CC 进程                     │
-│  stdin 注入 / stdout 解析 / 自动续命              │
-└──────┬──────────────────────┬────────────────────┘
-       │ stdin                │ stdout (stream-json)
-       ▼                     ▼
-┌─────────────────────────────────────────────────┐
-│              Claude Code (-p mode)               │
-│                                                  │
-│  Stop event:                                     │
-│    1. prompt hook → scoring.md (Haiku 评分)       │
-│    2. command hook → stop-hook.sh (续命控制)       │
-│                                                  │
-│  TeammateIdle event:                             │
-│    prompt hook → teammate-idle.md                │
-│                                                  │
-│  StopFailure event:                              │
-│    command hook → 通知 daemon                     │
-└──────┬──────────────────────────────────────────┘
-       │ curl --unix-socket
-       ▼
-┌─────────────────────────────────────────────────┐
-│           channel/daemon.ts                      │
-│  Unix socket HTTP API + Telegram long-polling    │
-│  Session 注册 / Topic 隔离 / 消息队列             │
-└──────┬──────────────────────┬────────────────────┘
-       │                     │
-       ▼                     ▼
-   Telegram Bot API      runner.py (轮询 /messages)
-```
+用户项目/
+├── GOAL.md                  ← 用户编写：目标 + 功能清单 + 行为规则
+└── .auto-claude/
+    └── results.jsonl        ← 每轮评分自动追加
 
-## 两层续命机制
-
-**第一层：Hook 级别（每次 Stop 触发）**
-1. scoring prompt (Haiku) 评估项目质量 → 不达 90 分则 CC 继续改进
-2. stop-hook.sh 追踪续命次数 → 未达上限则 block + 注入续命指令
-3. 连续 block 上限（MAX_CONSECUTIVE_BLOCKS=10）后放行一轮 → CC 产出 result
-
-**第二层：Runner 级别（每次 result 后）**
-1. runner.py 收到 result event → 发送 "继续改进项目" → 新一轮开始
-2. TG 消息轮询 → 用户消息优先注入
-3. 心跳检测 → 10 分钟无活动发送唤醒
-
-## 核心文件
-
-```
 auto-claude/
-├── scripts/
-│   ├── runner.py              # 主运行器（stream-json 模式）
-│   └── inject-prompts.sh      # 将 prompts/ 注入 settings.json
-├── hooks/
-│   └── stop-hook.sh           # 续命控制（计数 + 通知）
+├── scripts/runner.py        ← 无头模式引擎
+├── hooks/stop-hook.sh       ← 续命控制（两种模式都用）
 ├── prompts/
-│   ├── scoring.md             # 质量评分（Stop prompt hook）
-│   ├── continue.md            # 续命指令模板（stop-hook.sh 读取）
-│   └── teammate-idle.md       # 队友完成检查（TeammateIdle prompt hook）
-├── channel/
-│   └── src/
-│       ├── daemon.ts          # TG daemon（HTTP API + long-polling）
-│       ├── config.ts          # 配置加载
-│       └── telegram.ts        # TG Bot API
-├── config/
-│   ├── settings.json          # Hook 注册模板
-│   ├── config.env.example     # 环境变量模板
-│   └── mcp-config.example.json
-├── lib/
-│   ├── state.sh               # Session 状态（续命计数）
-│   └── log.sh                 # 日志
-├── SOUL.md
-├── README.md
-└── LICENSE
+│   ├── scoring.md           ← 通用评分（读 GOAL.md）
+│   ├── continue.md          ← 续命指令（含评分趋势）
+│   └── teammate-idle.md
+├── templates/GOAL.example.md ← GOAL.md 模板
+├── channel/                  ← TG daemon
+├── config/                   ← Hook 注册 + 环境变量
+└── lib/                      ← 状态管理 + 日志
 ```
 
 ## 评分系统
 
-scoring.md 定义 10 个维度，每项 0-10 分，满分 100，目标 90：
+scoring.md 定义 10 个通用维度，每项 0-10 分：
 
-| 维度 | 重点检查 |
-|------|---------|
-| 功能完整性 | 需求逐条核对，无死链 |
-| 前端质量 | 布局/响应式/交互/视觉一致性 |
-| 运行时稳定性 | 控制台零报错，刷新正常 |
-| 代码质量 | 零 lint 警告，类型安全 |
-| 测试覆盖 | 核心 API + E2E 主流程 |
-| 错误处理 | loading/error/empty 三态 |
-| 安全性 | 环境变量/输入校验/认证 |
-| 文档 | README + .env.example + API |
-| 数据层 | Schema 合理，有索引 |
-| 可运行性 | 一键能跑 |
+| # | 维度 | 说明 |
+|---|------|------|
+| 1 | 目标达成度 | 逐条核对 GOAL.md 功能清单 |
+| 2 | UI/UX 质量 | 有 UI 标杆则对标，无则检查一致性 |
+| 3 | 响应式 | 三断点适配 |
+| 4 | 运行时稳定性 | 控制台零报错 |
+| 5 | 代码质量 | 零编译错误，类型安全 |
+| 6 | 测试覆盖 | 核心逻辑有测试 |
+| 7 | 错误处理 | 三态处理 |
+| 8 | 安全性 | 环境变量、校验、认证 |
+| 9 | 文档 | README + .env.example |
+| 10 | 可运行性 | 一键能跑 |
 
-额外扣分：需求未对齐 -5/项，核心流程不通 -20，无法启动 -30。
+评分前必须跑 build/test/start。每轮结果追加到 `results.jsonl`。
 
-评分前 **必须** 跑 build、测试、启动验证。
-
-## Stop Hook 工作流
+## 迭代循环
 
 ```
-CC 即将停止
+CC 工作 → 想停止 → scoring prompt 评分
     │
-    ▼
-scoring prompt (Haiku 评分)
+    ├─ < 目标分 → CC 继续改进
     │
-    ├─ score < 90 → CC 继续改进（prompt hook 拒绝停止）
-    │
-    └─ score >= 90 → stop-hook.sh 运行
-                        │
-                        ├─ 连续 block >= 10 → 放行（reset 计数）
-                        │
-                        ├─ 总续命 >= 20 → 放行 + 通知
-                        │
-                        └─ 未达上限 → block (exit 2)
-                            注入 continue.md 到 stderr
+    └─ >= 目标分 → stop-hook.sh
+                      │
+                      ├─ 未达续命上限 → block + 注入续命指令（含评分趋势）
+                      │
+                      └─ 达续命上限 → 放行停止
 ```
 
-## Daemon HTTP API
+续命指令包含评分趋势：
+```
+上一轮评分：67/100
+趋势：53 → 61 → 67
+最低维度：UI/UX质量, 测试覆盖
+优先改进最低维度。
+```
 
-Unix socket: `~/.auto-claude/channel.sock`
+## Git 管理
 
-| Method | Path | 说明 |
-|--------|------|------|
-| GET | /health | 健康检查 |
-| POST | /notify | 发送 TG 通知 |
-| POST | /sessions | 注册 session（创建 Topic） |
-| GET | /sessions | 列出所有 session |
-| DELETE | /sessions/:id | 注销 session（关闭 Topic） |
-| GET | /sessions/:id/messages?timeout=30 | 长轮询消息 |
-| POST | /sessions/:id/reply | 回复到 TG |
-| POST | /inject/:id | 测试注入消息 |
+- CC 每完成一批改动后 git commit
+- 评分后自动 commit：`[auto-claude] round N: score X/100`
+- 不 reset — 评分趋势驱动改进方向
 
-## 配置
+## Telegram 双向通信
 
-`~/.auto-claude/config.env`:
+daemon.ts 常驻进程，Unix socket API。
 
-| 变量 | 默认 | 说明 |
-|------|------|------|
-| TG_BOT_TOKEN | -- | Telegram Bot Token |
-| TG_CHAT_ID | -- | 接收通知的 Chat ID |
-| MAX_CONTINUATIONS | 20 | 总续命上限 |
-| MAX_CONSECUTIVE_BLOCKS | 10 | 连续 block 上限 |
-| NOTIFY_ON_CONTINUE | true | 每次续命是否通知 |
-| CHANNEL_SOCKET | ~/.auto-claude/channel.sock | Daemon socket 路径 |
+- 通知：续命、完成、错误事件推送到 TG
+- 双向：用户从 TG 发消息 → runner.py 轮询注入 CC stdin
+- 多 session：TG 群组 Topics 隔离
