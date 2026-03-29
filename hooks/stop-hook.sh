@@ -97,7 +97,44 @@ main() {
     [[ "${NOTIFY_ON_CONTINUE:-true}" == "true" ]] && \
         _notify "续命 ${new_count}/${MAX_CONTINUATIONS}" "continue" "${session_id}" &>/dev/null &
 
+    # --- 查询 session 的 TG topic thread_id ---
+    local tg_thread_id=""
+    local tg_chat_id=""
+    if [[ -S "${CHANNEL_SOCKET}" ]] && [[ -n "${session_id}" ]]; then
+        local session_info
+        session_info="$(curl -s --max-time 3 --unix-socket "${CHANNEL_SOCKET}" "http://localhost/sessions" 2>/dev/null)" || true
+        if [[ -n "${session_info}" ]]; then
+            tg_thread_id="$(echo "${session_info}" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for s in d.get('sessions',[]):
+    if s['session_id']=='${session_id}':
+        print(s.get('topic_thread_id',''))
+        break
+" 2>/dev/null)" || true
+            tg_chat_id="$(python3 -c "
+import os
+for line in open(os.path.expanduser('~/.auto-claude/config.env')):
+    line=line.strip()
+    if line.startswith('TG_CHAT_ID='):
+        print(line.split('=',1)[1].strip().strip('\"').strip(\"'\"))
+        break
+" 2>/dev/null)" || true
+        fi
+    fi
+
     # --- 续命指令：评分 + TG 报告 + 继续 ---
+    local tg_instruction=""
+    if [[ -n "${tg_thread_id}" ]] && [[ -n "${tg_chat_id}" ]]; then
+        tg_instruction="2. REPORT: Send a detailed progress report to Telegram. Use the reply tool with chat_id=\"${tg_chat_id}\" and message_thread_id=${tg_thread_id}. Include:
+   - What you completed this round (bullet points)
+   - Current score and weakest dimensions
+   - What you plan to improve next
+   - Key stats (src files, tests passing, etc.)"
+    else
+        tg_instruction="2. REPORT: Send a detailed progress report to Telegram via the reply tool. Include what you completed, score, weakest dimensions, next steps, stats."
+    fi
+
     local msg="Continue working. Auto-continue ${new_count}/${MAX_CONTINUATIONS}.
 
 BEFORE continuing, you MUST do these 3 things:
@@ -105,11 +142,7 @@ BEFORE continuing, you MUST do these 3 things:
 1. SCORE: Read GOAL.md, evaluate the project (build/test/start), output JSON scores, and append one line to .auto-claude/results.jsonl:
    {\"round\":${new_count},\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"scores\":{...},\"total\":N,\"ok\":bool,\"worst\":[...],\"reason\":\"...\"}
 
-2. REPORT: Send a detailed progress report to Telegram via the reply tool. Include:
-   - What you completed this round (bullet points)
-   - Current score and weakest dimensions
-   - What you plan to improve next
-   - Key stats (src files, tests passing, etc.)
+${tg_instruction}
 
 3. COMMIT: git add -A && git commit -m \"[auto-claude] round ${new_count}: score X/100\"
 
