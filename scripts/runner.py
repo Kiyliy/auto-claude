@@ -171,7 +171,22 @@ def main():
     log(f"Started session={SESSION_ID}")
     log(f"Project: {project_dir}")
     log(f"Goal: {ARGS.goal}")
-    notify(f"开始 (GOAL驱动) session={SESSION_ID}", "start")
+
+    # Register session with daemon (creates TG topic in group mode)
+    register_payload = json.dumps({"session_id": SESSION_ID, "name": f"AC: {os.path.basename(project_dir)}"})
+    try:
+        s = sock.socket(sock.AF_UNIX, sock.SOCK_STREAM)
+        s.settimeout(5)
+        s.connect(ARGS.socket)
+        req = f"POST /sessions HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {len(register_payload)}\r\n\r\n{register_payload}"
+        s.sendall(req.encode())
+        s.recv(1024)
+        s.close()
+        log("Session registered with daemon")
+    except Exception:
+        log("Daemon not available, skipping session registration")
+
+    notify(f"Started (GOAL-driven) session={SESSION_ID}", "start")
 
     cmd = [
         "claude", "-p",
