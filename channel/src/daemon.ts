@@ -64,7 +64,8 @@ interface QueuedMessage {
   message_id: number;
   text: string;
   user: string;
-  date: number;
+  chat_id?: string;
+  date?: number;
   message_thread_id?: number;
 }
 
@@ -390,7 +391,9 @@ async function startPolling(config: ChannelConfig): Promise<void> {
           // Group mode but no thread_id: message in General topic
           // Route to any session that requested General (topic_thread_id=null),
           // or ignore if none.
-          log("debug", `Group mode, no thread_id on message — dropped`);
+          log("debug", "Group mode, no thread_id — routing to first active session");
+          const firstSession = Object.values(sessions).find(s => s.message_queue !== undefined);
+          if (firstSession) { firstSession.message_queue.push({ text: msg.text ?? "", chat_id: String(msg.chat.id), message_id: msg.message_id, user: userName }); }
         }
       }
     } catch (err) {
@@ -559,6 +562,20 @@ async function handleRequest(
     return;
   }
 
+  // ---- POST /inject ---- (test: inject message into session queue)
+  if (method === "POST" && url.startsWith("/inject/")) {
+    const sid = decodeURIComponent(url.slice("/inject/".length));
+    const entry = sessions.get(sid);
+    if (!entry) { jsonResponse(res, 404, { ok: false, error: "session not found" }); return; }
+    const raw = await readBody(req);
+    let body: { text?: string; user?: string };
+    try { body = JSON.parse(raw); } catch { jsonResponse(res, 400, { ok: false, error: "invalid JSON" }); return; }
+    entry.message_queue.push({ text: body.text ?? "", chat_id: config.chatId ?? "", message_id: 0, user: body.user ?? "test" });
+    log("http", `POST /inject -> session=${sid} text="${(body.text ?? "").slice(0, 60)}"`);
+    jsonResponse(res, 200, { ok: true });
+    return;
+  }
+
   // ---- POST /sessions ----
   if (method === "POST" && url === "/sessions") {
     const raw = await readBody(req);
@@ -600,10 +617,10 @@ async function handleRequest(
   }
 
   // ---- Routes with session_id path param ----
-  const sessionMatch = url.match(/^\/sessions\/([^/?]+)(\/.*)?(\?.*)?$/);
+  const sessionMatch = url.match(/^\/sessions\/([^/?]+)(\/[^?]*)?(\?.*)?$/);
   if (sessionMatch) {
     const sessionId = decodeURIComponent(sessionMatch[1]);
-    const subPath = sessionMatch[2] ?? "";
+    const rawSubPath = sessionMatch[2] ?? ""; const qIdx = rawSubPath.indexOf("?"); const subPath = qIdx >= 0 ? rawSubPath.slice(0, qIdx) : rawSubPath; const queryString2 = qIdx >= 0 ? rawSubPath.slice(qIdx) : (sessionMatch[3] ?? "");
     const queryString = sessionMatch[3] ?? "";
 
     // ---- DELETE /sessions/:id ----
