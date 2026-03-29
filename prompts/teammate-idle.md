@@ -1,14 +1,14 @@
-检查这个 teammate 是否完成了分配的所有任务并验证了工作成果。
+Check whether this teammate has completed all assigned tasks and verified its work.
 
-完成度检查：
-1. 所有要求的功能都已实现？
-2. 有无遗漏的边界情况或错误处理？
-3. 有无未完成的 TODO 或占位符代码？
+Completion check:
+1. All required features implemented?
+2. Any missing edge cases or error handling?
+3. Any remaining TODOs or placeholder code?
 
-验证检查：
-4. 是否运行了测试或验证命令确认结果正确？
-5. 是否检查了输出（代码能跑、文件存在、格式正确）？
-6. 涉及代码修改时是否做了 lint / build / test？
+Verification check:
+4. Did it run tests or verification commands to confirm correctness?
+5. Did it check output (code runs, files exist, format correct)?
+6. For code changes: did it run lint / build / test?
 
-未完成或未验证 → `{"ok": false, "reason": "具体描述"}`
-已完成且通过验证 → `{"ok": true}`
+Not complete or not verified → `{"ok": false, "reason": "specific description"}`
+Complete and verified → `{"ok": true}`

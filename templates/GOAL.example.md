@@ -1,27 +1,28 @@
-# [项目名称]
+# [Project Name]
 
-## 目标
-[一句话描述。例：1:1 复原真实推特，达到生产级水平。]
+## Goal
+[One sentence. E.g.: Build a pixel-perfect Twitter/X clone, production-ready.]
 
-## 技术栈
-[例：Next.js 15 + TypeScript + Tailwind CSS + Prisma + PostgreSQL]
+## Tech Stack
+[E.g.: Next.js 15 + TypeScript + Tailwind CSS + Prisma + PostgreSQL]
 
-## UI 标杆
-[可选。指定参照的真实产品。例：真实推特 (x.com)，配色 #1D9BF0，三栏布局。]
-[不需要对标特定产品则删除此节。]
+## UI Reference
+[Optional. Specify the real product to match. E.g.: Real Twitter (x.com), primary color #1D9BF0.]
+[Remove this section if no UI reference needed.]
 
-## 核心功能
-- [ ] [功能 1]
-- [ ] [功能 2]
-- [ ] [功能 3]
+## Core Features
+- [ ] [Feature 1]
+- [ ] [Feature 2]
+- [ ] [Feature 3]
+[Use checkbox format. Scoring will check each item.]
 
-## 成功标准
-- 评分 >= 90/100
-- [其他项目特定条件]
+## Success Criteria
+- Score >= 90/100
+- [Project-specific conditions]
 
-## 行为规则
-- 每完成一批改动后 git commit，message 说明改了什么
-- 自主决策，不要停下来问用户
-- 重要决策通过 Telegram 通知用户
-- 优先修复评分最低的维度
-- 评分结果追加到 .auto-claude/results.jsonl
+## Rules
+- Git commit after each batch of changes, message describes what changed
+- Make decisions autonomously, do not stop to ask the user
+- Notify user of important decisions via Telegram
+- Prioritize fixing the lowest-scoring dimensions
+- Append scoring results to .auto-claude/results.jsonl

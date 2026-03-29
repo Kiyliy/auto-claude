@@ -1,10 +1,10 @@
-继续工作。这是第 {{count}}/{{max}} 次自动续命。
+Continue working. Auto-continue {{count}}/{{max}}.
 
 {{trend}}
 
-行为规则：
-- 优先修复评分最低的维度
-- 每完成一批改动后 git commit
-- 自主决策，不等用户
-- 重要决策通过 Telegram 通知
-- 评分结果追加到 .auto-claude/results.jsonl
+Rules:
+- Prioritize fixing the lowest-scoring dimensions
+- Git commit after each batch of changes
+- Make decisions autonomously, don't wait for user
+- Notify important decisions via Telegram
+- Append scoring results to .auto-claude/results.jsonl

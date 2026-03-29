@@ -1,138 +1,157 @@
 # auto-claude
 
-> GOAL.md 驱动的 Claude Code 自主迭代引擎 — 写一个目标文件，CC 自己干到达标
+> GOAL.md-driven autonomous iteration engine for Claude Code — write one goal file, CC works until it's done.
 
-## 怎么用
+## How It Works
 
-### 1. 在项目根目录创建 GOAL.md
+1. You write a `GOAL.md` in your project root — what to build, feature checklist, success criteria
+2. Auto-Claude makes CC iterate autonomously, scoring each round against GOAL.md
+3. Each round: CC works → scoring prompt evaluates → below target: keep going → at target: stop
+4. Score trends are tracked in `.auto-claude/results.jsonl`
+
+## Quick Start
+
+### 1. Create GOAL.md in your project
 
 ```markdown
-# Twitter Clone
+# My App
 
-## 目标
-1:1 复原真实推特，达到生产级水平。
+## Goal
+Build a pixel-perfect Twitter clone, production-ready.
 
-## 技术栈
-Next.js 15 + TypeScript + Tailwind CSS + Prisma
+## Tech Stack
+Next.js + TypeScript + Tailwind CSS + Prisma
 
-## UI 标杆
-真实推特 (x.com)，配色 #1D9BF0
+## Core Features
+- [ ] Register / Login
+- [ ] Post tweets (text + images)
+- [ ] Like / Retweet / Bookmark
+- [ ] Follow / Unfollow
+- [ ] Profile page
+- [ ] Search
+- [ ] Responsive design
 
-## 核心功能
-- [ ] 注册 / 登录
-- [ ] 发推文（文字 + 图片）
-- [ ] 转推 / 引用
-- [ ] 点赞 / 收藏
-- [ ] 关注 / 粉丝
-- [ ] 个人主页
-- [ ] 通知
-- [ ] 搜索
-- [ ] 响应式
+## Success Criteria
+- Score >= 90/100
 
-## 成功标准
-- 评分 >= 90/100
-
-## 行为规则
-- 每完成一批改动后 git commit
-- 自主决策，不要停下来问用户
-- 优先修复评分最低的维度
-- 评分结果追加到 .auto-claude/results.jsonl
+## Rules
+- Git commit after each batch of changes
+- Make decisions autonomously
+- Prioritize fixing lowest-scoring dimensions
+- Append scoring results to .auto-claude/results.jsonl
 ```
 
-参考模板：[templates/GOAL.example.md](templates/GOAL.example.md)
+See [templates/GOAL.example.md](templates/GOAL.example.md) for the full template.
 
-### 2. 选择运行模式
+### 2. Choose a mode
 
-**无头模式**（后台持续跑）：
+**Headless mode** (runs in background):
 ```bash
-python3 auto-claude/scripts/runner.py --project ~/projects/twitter-clone
+python3 auto-claude/scripts/runner.py --project ~/projects/my-app
 ```
 
-**交互模式**（终端直接用）：
+**Interactive mode** (terminal):
 ```bash
-cd ~/projects/twitter-clone
+cd ~/projects/my-app
 claude
-> 请阅读 GOAL.md 并开始工作
+> Read GOAL.md and start working
 ```
 
-两种模式使用相同的 hooks 和评分系统。
+Both modes use the same hooks and scoring system.
 
-### 3. 观察进度
+### 3. Watch progress
 
 ```bash
-# 查看评分趋势
-cat ~/projects/twitter-clone/.auto-claude/results.jsonl | python3 -c "
-import json,sys
+# Score trends
+cat ~/projects/my-app/.auto-claude/results.jsonl | python3 -c "
+import json, sys
 for l in sys.stdin:
-    e=json.loads(l)
+    e = json.loads(l)
     print(f\"Round {e.get('round','?')}: {e.get('total','?')}/100 — worst: {', '.join(e.get('worst',[]))}\")"
 
-# 查看日志
+# Live log
 tail -f ~/auto-claude-test.log
 ```
 
-## 安装
+## Installation
 
 ```bash
 git clone https://github.com/Kiyliy/auto-claude.git
 cd auto-claude
 
-# 配置环境变量
+# Configure
 mkdir -p ~/.auto-claude/{state,logs}
 cp config/config.env.example ~/.auto-claude/config.env
-# 编辑 config.env，填写 TG_BOT_TOKEN 和 TG_CHAT_ID
+# Edit config.env: set TG_BOT_TOKEN and TG_CHAT_ID
 
-# 注入评分 prompt 到 settings.json
+# Inject scoring prompt into CC settings
 bash scripts/inject-prompts.sh
 
-# （可选）启动 Telegram daemon
+# (Optional) Start Telegram daemon
 cd channel && npm install && cd ..
 npx tsx channel/src/daemon.ts &
 ```
 
-## 评分系统
+## Scoring System
 
-10 个通用维度，满分 100：
+10 universal dimensions, 0-10 each, max 100:
 
-| # | 维度 | 说明 |
-|---|------|------|
-| 1 | 目标达成度 | 逐条核对 GOAL.md 功能清单 |
-| 2 | UI/UX 质量 | 有 UI 标杆则对标，无则检查一致性 |
-| 3 | 响应式 | 桌面/平板/手机三断点 |
-| 4 | 运行时稳定性 | 控制台零报错 |
-| 5 | 代码质量 | 零编译错误，类型安全 |
-| 6 | 测试覆盖 | 核心逻辑有测试 |
-| 7 | 错误处理 | loading/error/empty 三态 |
-| 8 | 安全性 | 环境变量、输入校验 |
-| 9 | 文档 | README + .env.example |
-| 10 | 可运行性 | 一键能跑 |
+| # | Dimension | Description |
+|---|-----------|-------------|
+| 1 | Goal Completion | Check GOAL.md feature list item by item |
+| 2 | UI/UX Quality | Match UI reference if specified |
+| 3 | Responsive | Desktop / tablet / mobile |
+| 4 | Runtime Stability | Zero console errors |
+| 5 | Code Quality | Zero build errors, type-safe |
+| 6 | Test Coverage | Core logic tested |
+| 7 | Error Handling | Loading / error / empty states |
+| 8 | Security | Env vars, input validation |
+| 9 | Documentation | README + .env.example |
+| 10 | Runnability | One-command start |
 
-评分前必须跑 build、测试、启动验证。每轮结果追加到 `.auto-claude/results.jsonl`。
+Scoring requires running build, tests, and dev server first. Results append to `.auto-claude/results.jsonl`.
 
-## 项目结构
+## Project Structure
 
 ```
 auto-claude/
-├── scripts/runner.py          # 无头模式引擎
-├── hooks/stop-hook.sh         # 续命控制器
+├── GOAL.md                    # Test goal (Twitter clone)
+├── templates/GOAL.example.md  # GOAL.md template for users
+├── scripts/runner.py          # Headless mode engine
+├── hooks/stop-hook.sh         # Continuation controller
 ├── prompts/
-│   ├── scoring.md             # 通用评分（读 GOAL.md）
-│   ├── continue.md            # 续命指令（含趋势）
+│   ├── scoring.md             # Generic scoring (reads GOAL.md)
+│   ├── continue.md            # Continuation prompt (with trends)
 │   └── teammate-idle.md
-├── templates/GOAL.example.md  # GOAL.md 模板
-├── channel/src/               # TG daemon
-├── config/                    # Hook 注册 + 环境变量
-└── lib/                       # 状态管理 + 日志
+├── channel/src/               # Telegram daemon
+├── config/                    # Hook registration + env vars
+└── lib/                       # State management + logging
 ```
 
-## 前置条件
+## Configuration
 
-| 依赖 | 说明 |
-|------|------|
-| Claude Code | `claude --version` |
-| jq | `apt install jq` |
-| Python 3 | runner.py |
-| Node.js | TG daemon（可选） |
+`~/.auto-claude/config.env`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TG_BOT_TOKEN` | — | Telegram Bot Token (required) |
+| `TG_CHAT_ID` | — | Chat ID (required) |
+| `MAX_CONTINUATIONS` | 20 | Max continuations per session |
+| `MAX_CONSECUTIVE_BLOCKS` | 10 | Max consecutive blocks before allowing one stop |
+| `NOTIFY_ON_CONTINUE` | true | Notify on each continuation |
+
+## Runner CLI
+
+```
+python3 runner.py --project PATH [--goal GOAL.md] [--max-turns 100] [--mcp-config FILE]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--project` | (required) | Project directory with GOAL.md |
+| `--goal` | GOAL.md | Goal filename |
+| `--max-turns` | 100 | Max rounds |
+| `--mcp-config` | — | MCP config for Telegram etc. |
 
 ## License
 

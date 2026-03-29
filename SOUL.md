@@ -1,106 +1,102 @@
 # Auto-Claude
 
-> GOAL.md 驱动的 Claude Code 自主迭代引擎
+> GOAL.md-driven autonomous iteration engine for Claude Code
 
-## 核心理念
+## Core Concept
 
-用户写一个 `GOAL.md` 放在项目根目录，定义项目目标和功能清单。
-Auto-Claude 让 CC 自主迭代，每轮评分，直到达标。
+User writes a `GOAL.md` in their project root — defines what to build, feature checklist, success criteria.
+Auto-Claude makes CC iterate autonomously, scoring each round, until the target is met.
 
 ```
-用户写 GOAL.md → CC 读取并开始工作 → 评分 → 未达标继续 → 达标停止
+User writes GOAL.md → CC reads it and starts working → scoring → below target: continue → at target: stop
 ```
 
-## 两种使用模式
+## Two Modes
 
-### 无头模式（-p）
+### Headless Mode (-p)
 ```bash
 python3 runner.py --project ~/projects/twitter-clone
 ```
-runner.py 读 GOAL.md，启动 CC stream-json 进程，自动续命，TG 消息桥接。
+runner.py reads GOAL.md, spawns CC in stream-json mode, auto-continues, bridges Telegram messages.
 
-### 交互模式（CLI）
+### Interactive Mode (CLI)
 ```bash
 cd ~/projects/twitter-clone
 claude
-> 请阅读 GOAL.md 并开始工作
+> Read GOAL.md and start working
 ```
-CC hooks 自动生效：scoring prompt 评分，stop-hook.sh 续命。
+CC hooks handle scoring and continuation automatically.
 
-两种模式共享同一套 hooks 和 prompts。
+Both modes share the same hooks and prompts.
 
-## 架构
+## Architecture
 
 ```
-用户项目/
-├── GOAL.md                  ← 用户编写：目标 + 功能清单 + 行为规则
+user-project/
+├── GOAL.md                  ← User writes: goals + feature checklist + rules
 └── .auto-claude/
-    └── results.jsonl        ← 每轮评分自动追加
+    └── results.jsonl        ← Per-round scores appended automatically
 
 auto-claude/
-├── scripts/runner.py        ← 无头模式引擎
-├── hooks/stop-hook.sh       ← 续命控制（两种模式都用）
+├── scripts/runner.py        ← Headless mode engine
+├── hooks/stop-hook.sh       ← Continuation controller (both modes)
 ├── prompts/
-│   ├── scoring.md           ← 通用评分（读 GOAL.md）
-│   ├── continue.md          ← 续命指令（含评分趋势）
+│   ├── scoring.md           ← Generic scoring (reads GOAL.md)
+│   ├── continue.md          ← Continuation prompt (with score trends)
 │   └── teammate-idle.md
-├── templates/GOAL.example.md ← GOAL.md 模板
-├── channel/                  ← TG daemon
-├── config/                   ← Hook 注册 + 环境变量
-└── lib/                      ← 状态管理 + 日志
+├── templates/GOAL.example.md ← GOAL.md template
+├── channel/                  ← Telegram daemon
+├── config/                   ← Hook registration + env vars
+└── lib/                      ← State management + logging
 ```
 
-## 评分系统
+## Scoring System
 
-scoring.md 定义 10 个通用维度，每项 0-10 分：
+10 universal dimensions, 0-10 each, max 100:
 
-| # | 维度 | 说明 |
-|---|------|------|
-| 1 | 目标达成度 | 逐条核对 GOAL.md 功能清单 |
-| 2 | UI/UX 质量 | 有 UI 标杆则对标，无则检查一致性 |
-| 3 | 响应式 | 三断点适配 |
-| 4 | 运行时稳定性 | 控制台零报错 |
-| 5 | 代码质量 | 零编译错误，类型安全 |
-| 6 | 测试覆盖 | 核心逻辑有测试 |
-| 7 | 错误处理 | 三态处理 |
-| 8 | 安全性 | 环境变量、校验、认证 |
-| 9 | 文档 | README + .env.example |
-| 10 | 可运行性 | 一键能跑 |
+| # | Dimension | Description |
+|---|-----------|-------------|
+| 1 | Goal Completion | Check GOAL.md feature list item by item |
+| 2 | UI/UX Quality | Match UI reference if specified, else check consistency |
+| 3 | Responsive | Desktop / tablet / mobile breakpoints |
+| 4 | Runtime Stability | Zero console errors |
+| 5 | Code Quality | Zero build errors, type-safe |
+| 6 | Test Coverage | Core logic tested |
+| 7 | Error Handling | Loading / error / empty states |
+| 8 | Security | Env vars, input validation, auth |
+| 9 | Documentation | README + .env.example |
+| 10 | Runnability | One-command start |
 
-评分前必须跑 build/test/start。每轮结果追加到 `results.jsonl`。
+Must run build/test/start before scoring. Results append to `results.jsonl`.
 
-## 迭代循环
+## Iteration Loop
 
 ```
-CC 工作 → 想停止 → scoring prompt 评分
+CC works → tries to stop → scoring prompt evaluates
     │
-    ├─ < 目标分 → CC 继续改进
+    ├─ below target → CC continues improving
     │
-    └─ >= 目标分 → stop-hook.sh
+    └─ at target → stop-hook.sh
                       │
-                      ├─ 未达续命上限 → block + 注入续命指令（含评分趋势）
+                      ├─ under max continuations → block + inject continue (with trend)
                       │
-                      └─ 达续命上限 → 放行停止
+                      └─ at max continuations → allow stop
 ```
 
-续命指令包含评分趋势：
+Continuation prompt includes score trends:
 ```
-上一轮评分：67/100
-趋势：53 → 61 → 67
-最低维度：UI/UX质量, 测试覆盖
-优先改进最低维度。
+Last score: 67/100
+Trend: 53 → 61 → 67
+Lowest: ui_ux, test_coverage
+Prioritize fixing lowest dimensions.
 ```
 
-## Git 管理
+## Git Management
 
-- CC 每完成一批改动后 git commit
-- 评分后自动 commit：`[auto-claude] round N: score X/100`
-- 不 reset — 评分趋势驱动改进方向
+- CC commits after each batch of changes
+- Auto-commit after scoring: `[auto-claude] round N: score X/100`
+- No reset — score trends drive improvement direction
 
-## Telegram 双向通信
+## Telegram
 
-daemon.ts 常驻进程，Unix socket API。
-
-- 通知：续命、完成、错误事件推送到 TG
-- 双向：用户从 TG 发消息 → runner.py 轮询注入 CC stdin
-- 多 session：TG 群组 Topics 隔离
+Daemon process on Unix socket. Notifications for continuation/completion/errors. Bidirectional: user messages from Telegram injected into CC stdin. Multi-session via group Topics.
