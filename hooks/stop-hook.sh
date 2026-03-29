@@ -126,13 +126,11 @@ for line in open(os.path.expanduser('~/.auto-claude/config.env')):
     # --- 续命指令：评分 + TG 报告 + 继续 ---
     local tg_instruction=""
     if [[ -n "${tg_thread_id}" ]] && [[ -n "${tg_chat_id}" ]]; then
-        tg_instruction="2. REPORT: Send a detailed progress report to Telegram. Use the reply tool with chat_id=\"${tg_chat_id}\" and message_thread_id=${tg_thread_id}. Include:
-   - What you completed this round (bullet points)
-   - Current score and weakest dimensions
-   - What you plan to improve next
-   - Key stats (src files, tests passing, etc.)"
+        tg_instruction="2. REPORT: Send a detailed progress report to Telegram. Run this bash command (replace YOUR_REPORT with your actual report):
+   curl -s --unix-socket ${CHANNEL_SOCKET} -X POST http://localhost/sessions/${session_id}/reply -H 'Content-Type: application/json' -d '{\"text\":\"YOUR_REPORT\"}'
+   The report must include: what you completed (bullet points), current score, weakest dimensions, next steps, key stats."
     else
-        tg_instruction="2. REPORT: Send a detailed progress report to Telegram via the reply tool. Include what you completed, score, weakest dimensions, next steps, stats."
+        tg_instruction="2. REPORT: Log your progress report to stdout. Include what you completed, score, weakest dimensions, next steps, stats."
     fi
 
     local msg="Continue working. Auto-continue ${new_count}/${MAX_CONTINUATIONS}.
