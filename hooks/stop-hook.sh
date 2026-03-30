@@ -82,15 +82,19 @@ run_haiku_review() {
 
     # 调用独立 Haiku CC 进程做审查
     local haiku_result
+    # REVIEW_MODEL: haiku (cheap, fast) or sonnet (strict, thorough). Default: sonnet
+    local review_model="${REVIEW_MODEL:-sonnet}"
+    log_info "Using model: ${review_model}"
+
     haiku_result="$(cd "${project_dir}" && IS_SANDBOX=1 timeout 300 claude -p \
-        --model haiku \
+        --model "${review_model}" \
         --dangerously-skip-permissions \
         --output-format json \
         "${scoring_prompt}
 
 IMPORTANT: You are an INDEPENDENT reviewer. Be strict and honest.
 This is round ${round_num}. Output ONLY the JSON object, nothing else.
-Test the app with curl against localhost:3000 if a server is running." 2>/dev/null)" || true
+You MUST run curl tests against localhost:3000. Skip curl = score 0." 2>/dev/null)" || true
 
     # 从 haiku 输出中提取 JSON
     local score_json
