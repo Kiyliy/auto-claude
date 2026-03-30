@@ -99,27 +99,49 @@ import json, sys, re
 
 raw = sys.stdin.read()
 
-# Try to parse the result field from CC JSON output
+# Step 1: extract result field from CC --output-format json wrapper
+text = raw
 try:
     cc_out = json.loads(raw)
     text = cc_out.get('result', raw)
 except:
-    text = raw
+    pass
 
-# Find JSON object in the text
-match = re.search(r'\{[^{}]*\"total\"[^{}]*\}', text, re.DOTALL)
-if not match:
-    # Try multiline JSON
-    match = re.search(r'\{.*?\"total\".*?\}', text, re.DOTALL)
+# Step 2: strip markdown code fences (haiku wraps JSON in \`\`\`json ... \`\`\`)
+text = re.sub(r'\`\`\`json\s*', '', text)
+text = re.sub(r'\`\`\`\s*', '', text)
+text = text.strip()
 
-if match:
-    try:
-        obj = json.loads(match.group())
-        print(json.dumps(obj))
-    except:
-        print(json.dumps({'total': 0, 'error': 'json parse failed', 'raw': text[:500]}))
+# Step 3: find the JSON object with 'total' field
+# Try the full text first
+obj = None
+try:
+    obj = json.loads(text)
+except:
+    # Find JSON block with nested braces support
+    depth = 0
+    start = -1
+    for i, c in enumerate(text):
+        if c == '{':
+            if depth == 0:
+                start = i
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0 and start >= 0:
+                try:
+                    candidate = json.loads(text[start:i+1])
+                    if 'total' in candidate:
+                        obj = candidate
+                        break
+                except:
+                    pass
+                start = -1
+
+if obj and 'total' in obj:
+    print(json.dumps(obj))
 else:
-    print(json.dumps({'total': 0, 'error': 'no json found', 'raw': text[:500]}))
+    print(json.dumps({'total': 0, 'error': 'parse failed', 'raw': text[:300]}))
 " 2>/dev/null)" || score_json='{"total":0,"error":"haiku failed"}'
 
     echo "${score_json}"

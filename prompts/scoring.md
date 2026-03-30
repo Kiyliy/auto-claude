@@ -14,11 +14,25 @@ The same project scores VERY differently at each level. A polished demo that com
 
 ## Before Scoring
 
-You MUST run ALL of these:
-1. `npm run build` (or equivalent) — zero errors
-2. `npm test` — all pass
-3. Start the dev server
-4. **Actually test the app with curl against localhost** — this is NOT optional
+You MUST run ALL of these steps IN ORDER. Skip nothing.
+
+1. `npm run build` (or equivalent) — record pass/fail
+2. `npm test` — record how many pass/fail
+3. Check if a server is running: `curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/`
+4. If no server: start one with `npm start &` or `npm run dev &`, wait 5 seconds
+5. **MANDATORY curl tests** — run these exact commands and record each result:
+   ```
+   curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/
+   curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/auth/login
+   curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/auth/register
+   curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/home
+   curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/search
+   curl -s -X POST http://localhost:3000/api/auth/csrf -w '%{http_code}'
+   ```
+6. **Register + login test**: POST to register endpoint, then login, verify cookie returned
+7. Record every non-200 response as a bug
+
+**If you skip the curl tests, score = 0. No exceptions.**
 
 ## DEMO Level Scoring (0-10 each)
 
