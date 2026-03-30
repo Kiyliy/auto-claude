@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "auto-claude-telegram": {
-      "command": "npx",
-      "args": ["tsx", "/root/auto-claude/channel/src/index.ts"]
-    }
-  }
-}
