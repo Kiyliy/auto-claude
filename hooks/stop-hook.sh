@@ -86,7 +86,7 @@ run_haiku_review() {
     local review_model="${REVIEW_MODEL:-sonnet}"
     log_info "Using model: ${review_model}"
 
-    haiku_result="$(cd "${project_dir}" && IS_SANDBOX=1 timeout 300 claude -p \
+    haiku_result="$(cd "${project_dir}" && IS_SANDBOX=1 timeout 600 claude -p \
         --model "${review_model}" \
         --dangerously-skip-permissions \
         --output-format json \
