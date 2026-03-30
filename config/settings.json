@@ -7,8 +7,8 @@
           {
             "type": "agent",
             "prompt": "Read prompts/scoring.md and follow it exactly. Read GOAL.md to understand the project goals. Then score the project by actually running tests and curl-testing the server. Return JSON with ok/reason. $ARGUMENTS",
-            "model": "claude-haiku-4-5-20251001",
-            "timeout": 120
+            "model": "claude-sonnet-4-6",
+            "timeout": 1800
           }
         ]
       }
