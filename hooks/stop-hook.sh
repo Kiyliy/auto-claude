@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # ============================================================================
-# stop-hook.sh — 续命控制器
+# stop-hook.sh — 续命控制器 + Haiku 独立审查
 # ============================================================================
-# Stop event command hook。在 scoring prompt 之后运行。
-# 控制 CC 是否继续工作：追踪续命计数，未达上限则 block。
+# Stop event command hook.
+# 1. 启动独立 Haiku 进程审查项目质量（非自评）
+# 2. 根据分数决定 block/allow
+# 3. 将审查结果注入 CC 的 context
 #
-# 输入 (stdin JSON): session_id, stop_hook_active
+# 输入 (stdin JSON): session_id, stop_hook_active, cwd
 # 输出: exit 0 = 放行停止, exit 2 + stderr = 阻止停止并注入消息
 # ============================================================================
 
@@ -25,8 +27,8 @@ _LOG_HOOK_NAME="stop-hook"
 CHANNEL_SOCKET="${CHANNEL_SOCKET:-${HOME}/.auto-claude/channel.sock}"
 MAX_CONTINUATIONS="${MAX_CONTINUATIONS:-20}"
 MAX_CONSECUTIVE_BLOCKS="${MAX_CONSECUTIVE_BLOCKS:-10}"
+SCORE_TARGET="${SCORE_TARGET:-90}"
 
-# 通过 daemon 发送 Telegram 通知（后台，不阻塞）
 _notify() {
     local msg="$1" evt="${2:-info}" sid="${3:-}"
     [[ -S "${CHANNEL_SOCKET}" ]] || return 0
@@ -35,6 +37,16 @@ _notify() {
         -H "Content-Type: application/json" \
         -d "$(python3 -c "import json,sys;print(json.dumps({'message':sys.argv[1],'event_type':sys.argv[2],'session_id':sys.argv[3]}))" \
             "${msg}" "${evt}" "${sid}" 2>/dev/null)" \
+        &>/dev/null &
+}
+
+_tg_reply() {
+    local msg="$1" sid="$2"
+    [[ -S "${CHANNEL_SOCKET}" ]] || return 0
+    curl -s --max-time 5 --unix-socket "${CHANNEL_SOCKET}" \
+        -X POST "http://localhost/sessions/${sid}/reply" \
+        -H "Content-Type: application/json" \
+        -d "$(python3 -c "import json,sys;print(json.dumps({'text':sys.argv[1]}))" "${msg}" 2>/dev/null)" \
         &>/dev/null &
 }
 
@@ -49,6 +61,73 @@ allow_stop() {
     exit 0
 }
 
+# ============================================================================
+# Haiku 独立审查
+# ============================================================================
+run_haiku_review() {
+    local project_dir="$1"
+    local round_num="$2"
+    local scoring_prompt_file="${SCRIPT_DIR}/../prompts/scoring.md"
+
+    [[ ! -d "${project_dir}" ]] && { echo '{"total":0,"error":"project dir not found"}'; return; }
+
+    local scoring_prompt=""
+    if [[ -f "${scoring_prompt_file}" ]]; then
+        scoring_prompt="$(cat "${scoring_prompt_file}")"
+    else
+        scoring_prompt="Score this project 0-100. Output JSON with total, scores, bugs_found, worst, reason."
+    fi
+
+    log_info "Starting Haiku review in ${project_dir}..."
+
+    # 调用独立 Haiku CC 进程做审查
+    local haiku_result
+    haiku_result="$(cd "${project_dir}" && IS_SANDBOX=1 timeout 300 claude -p \
+        --model haiku \
+        --dangerously-skip-permissions \
+        --output-format json \
+        "${scoring_prompt}
+
+IMPORTANT: You are an INDEPENDENT reviewer. Be strict and honest.
+This is round ${round_num}. Output ONLY the JSON object, nothing else.
+Test the app with curl against localhost:3000 if a server is running." 2>/dev/null)" || true
+
+    # 从 haiku 输出中提取 JSON
+    local score_json
+    score_json="$(echo "${haiku_result}" | python3 -c "
+import json, sys, re
+
+raw = sys.stdin.read()
+
+# Try to parse the result field from CC JSON output
+try:
+    cc_out = json.loads(raw)
+    text = cc_out.get('result', raw)
+except:
+    text = raw
+
+# Find JSON object in the text
+match = re.search(r'\{[^{}]*\"total\"[^{}]*\}', text, re.DOTALL)
+if not match:
+    # Try multiline JSON
+    match = re.search(r'\{.*?\"total\".*?\}', text, re.DOTALL)
+
+if match:
+    try:
+        obj = json.loads(match.group())
+        print(json.dumps(obj))
+    except:
+        print(json.dumps({'total': 0, 'error': 'json parse failed', 'raw': text[:500]}))
+else:
+    print(json.dumps({'total': 0, 'error': 'no json found', 'raw': text[:500]}))
+" 2>/dev/null)" || score_json='{"total":0,"error":"haiku failed"}'
+
+    echo "${score_json}"
+}
+
+# ============================================================================
+# Main
+# ============================================================================
 main() {
     local input=""
     [[ ! -t 0 ]] && input="$(cat)"
@@ -64,16 +143,15 @@ main() {
     state_init "${session_id}"
 
     # --- 连续 block 计数 ---
-    # stop_hook_active=true 时 CC 正处于被 block 后的续命中
     if [[ "${stop_hook_active}" == "true" ]]; then
         local blocks
         blocks="$(state_read "${session_id}" '.consecutive_blocks // 0')"
         blocks=$((blocks + 1))
         state_write "${session_id}" ".consecutive_blocks = ${blocks}"
-        log_info "连续 block: ${blocks}/${MAX_CONSECUTIVE_BLOCKS}"
+        log_info "Consecutive blocks: ${blocks}/${MAX_CONSECUTIVE_BLOCKS}"
 
         if [[ "${blocks}" -ge "${MAX_CONSECUTIVE_BLOCKS}" ]]; then
-            log_warn "连续 block 达到上限，放行一轮"
+            log_warn "Consecutive block limit reached, allowing one stop"
             state_write "${session_id}" ".consecutive_blocks = 0"
             allow_stop
         fi
@@ -86,65 +164,64 @@ main() {
     count="$(state_get_continuation_count "${session_id}")"
 
     if [[ "${count}" -ge "${MAX_CONTINUATIONS}" ]]; then
-        _notify "续命达到上限 (${MAX_CONTINUATIONS}次)" "max_reached" "${session_id}"
+        _notify "Max continuations reached (${MAX_CONTINUATIONS})" "max_reached" "${session_id}"
         allow_stop
     fi
 
     state_increment_continuation "${session_id}"
     local new_count=$((count + 1))
-    log_info "续命 #${new_count}/${MAX_CONTINUATIONS}"
+    log_info "Continue #${new_count}/${MAX_CONTINUATIONS}"
 
-    [[ "${NOTIFY_ON_CONTINUE:-true}" == "true" ]] && \
-        _notify "续命 ${new_count}/${MAX_CONTINUATIONS}" "continue" "${session_id}" &>/dev/null &
+    # --- Haiku 独立审查 ---
+    local project_dir="${cwd:-$(pwd)}"
+    local score_json=""
+    local total=0
+    local haiku_reason=""
+    local haiku_bugs=""
+    local haiku_worst=""
 
-    # --- 查询 session 的 TG topic thread_id ---
-    local tg_thread_id=""
-    local tg_chat_id=""
-    if [[ -S "${CHANNEL_SOCKET}" ]] && [[ -n "${session_id}" ]]; then
-        local session_info
-        session_info="$(curl -s --max-time 3 --unix-socket "${CHANNEL_SOCKET}" "http://localhost/sessions" 2>/dev/null)" || true
-        if [[ -n "${session_info}" ]]; then
-            tg_thread_id="$(echo "${session_info}" | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-for s in d.get('sessions',[]):
-    if s['session_id']=='${session_id}':
-        print(s.get('topic_thread_id',''))
-        break
-" 2>/dev/null)" || true
-            tg_chat_id="$(python3 -c "
-import os
-for line in open(os.path.expanduser('~/.auto-claude/config.env')):
-    line=line.strip()
-    if line.startswith('TG_CHAT_ID='):
-        print(line.split('=',1)[1].strip().strip('\"').strip(\"'\"))
-        break
-" 2>/dev/null)" || true
-        fi
-    fi
+    score_json="$(run_haiku_review "${project_dir}" "${new_count}")"
+    total="$(echo "${score_json}" | jq -r '.total // 0' 2>/dev/null)" || total=0
+    haiku_reason="$(echo "${score_json}" | jq -r '.reason // "no reason"' 2>/dev/null)" || haiku_reason=""
+    haiku_worst="$(echo "${score_json}" | jq -r '(.worst // []) | join(", ")' 2>/dev/null)" || haiku_worst=""
+    haiku_bugs="$(echo "${score_json}" | jq -r '(.bugs_found // []) | join("; ")' 2>/dev/null)" || haiku_bugs=""
 
-    # --- 续命指令：评分 + TG 报告 + 继续 ---
-    local tg_instruction=""
-    if [[ -n "${tg_thread_id}" ]] && [[ -n "${tg_chat_id}" ]]; then
-        tg_instruction="2. REPORT: Send a detailed progress report to Telegram. Run this bash command (replace YOUR_REPORT with your actual report):
-   curl -s --unix-socket ${CHANNEL_SOCKET} -X POST http://localhost/sessions/${session_id}/reply -H 'Content-Type: application/json' -d '{\"text\":\"YOUR_REPORT\"}'
-   The report must include: what you completed (bullet points), current score, weakest dimensions, next steps, key stats."
-    else
-        tg_instruction="2. REPORT: Log your progress report to stdout. Include what you completed, score, weakest dimensions, next steps, stats."
-    fi
+    log_info "Haiku score: ${total}/100 (worst: ${haiku_worst})"
 
+    # --- 写 results.jsonl ---
+    local results_file="${project_dir}/.auto-claude/results.jsonl"
+    mkdir -p "$(dirname "${results_file}")" 2>/dev/null || true
+    # 添加 round 和 timestamp
+    local enriched_json
+    enriched_json="$(echo "${score_json}" | python3 -c "
+import json, sys, datetime
+obj = json.loads(sys.stdin.read())
+obj['round'] = ${new_count}
+obj['timestamp'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+obj['reviewer'] = 'haiku'
+print(json.dumps(obj))
+" 2>/dev/null)" || enriched_json="${score_json}"
+    echo "${enriched_json}" >> "${results_file}" 2>/dev/null || true
+
+    # --- TG 报告 ---
+    local tg_report="📊 Round ${new_count} (Haiku review): ${total}/100"
+    [[ -n "${haiku_worst}" ]] && tg_report="${tg_report}\nWeakest: ${haiku_worst}"
+    [[ -n "${haiku_bugs}" ]] && tg_report="${tg_report}\n🐛 Bugs: ${haiku_bugs}"
+    [[ -n "${haiku_reason}" ]] && tg_report="${tg_report}\n${haiku_reason}"
+    _tg_reply "${tg_report}" "${session_id}" &>/dev/null &
+    _notify "Round ${new_count}: ${total}/100" "score" "${session_id}" &>/dev/null &
+
+    # --- 决策：block 或 allow ---
     local msg="Continue working. Auto-continue ${new_count}/${MAX_CONTINUATIONS}.
 
-BEFORE continuing, you MUST do these 3 things:
+=== INDEPENDENT HAIKU REVIEW (score: ${total}/100, target: ${SCORE_TARGET}) ===
+${haiku_reason}
+Weakest dimensions: ${haiku_worst}
+Bugs found: ${haiku_bugs:-none}
+=======================================================================
 
-1. SCORE: Read GOAL.md, evaluate the project (build/test/start), output JSON scores, and append one line to .auto-claude/results.jsonl:
-   {\"round\":${new_count},\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"scores\":{...},\"total\":N,\"ok\":bool,\"worst\":[...],\"reason\":\"...\"}
-
-${tg_instruction}
-
-3. COMMIT: git add -A && git commit -m \"[auto-claude] round ${new_count}: score X/100\"
-
-Then continue improving the project. Prioritize the lowest-scoring dimensions."
+Fix the issues above. Prioritize bugs first, then lowest-scoring dimensions.
+After fixing, git commit your changes."
 
     block_stop "${msg}"
 }
