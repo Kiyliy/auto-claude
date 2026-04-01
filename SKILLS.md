@@ -1,6 +1,6 @@
-# Auto-Claude Skills Guide
+# SleepShip Skills Guide
 
-Practical playbook for using auto-claude on any project — from scratch or mid-flight.
+Practical playbook for using sleepship on any project — from scratch or mid-flight.
 
 ---
 
@@ -44,7 +44,7 @@ Next.js + TypeScript + Tailwind CSS + Prisma + SQLite
 EOF
 
 # Launch
-python3 /path/to/auto-claude/runner.py --project .
+python3 /path/to/sleepship/runner.py --project .
 ```
 
 Auto-claude will scaffold the project, implement features, test, get reviewed, and iterate until it passes.
@@ -90,7 +90,7 @@ mvp
 - Run existing tests before and after changes
 EOF
 
-python3 /path/to/auto-claude/runner.py --project .
+python3 /path/to/sleepship/runner.py --project .
 ```
 
 **Key:** The `## Existing Context` section tells the agent what's already there so it doesn't reinvent the wheel.
@@ -137,7 +137,7 @@ pmf
 - Do not add new features
 EOF
 
-python3 /path/to/auto-claude/runner.py --project . --target-score 90
+python3 /path/to/sleepship/runner.py --project . --target-score 90
 ```
 
 ---
@@ -174,7 +174,7 @@ demo
 - Single HTML file with inline JS/CSS is fine
 EOF
 
-python3 /path/to/auto-claude/runner.py --project . --target-score 70 --max-turns 20
+python3 /path/to/sleepship/runner.py --project . --target-score 70 --max-turns 20
 ```
 
 **Key:** `Level: demo` + `--target-score 70` + `--max-turns 20` = fast and loose.
@@ -216,7 +216,7 @@ mvp
 - If a test breaks, fix the migration, not the test
 EOF
 
-python3 /path/to/auto-claude/runner.py --project .
+python3 /path/to/sleepship/runner.py --project .
 ```
 
 ---
@@ -285,7 +285,7 @@ This prevents the agent from guessing your stack or accidentally overwriting you
 ### Resume interrupted sessions
 
 ```bash
-# Auto-claude saves session state in PROJECT/.auto-claude/session.json
+# SleepShip saves session state in PROJECT/.sleepship/session.json
 python3 runner.py --project ~/myapp --resume
 ```
 

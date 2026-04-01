@@ -1,7 +1,7 @@
 {
-  "name": "auto-claude-telegram-channel",
+  "name": "sleepship-telegram-channel",
   "version": "0.2.0",
-  "description": "Auto-Claude Telegram Channel — bidirectional CC <-> Telegram",
+  "description": "SleepShip Telegram Channel — bidirectional CC <-> Telegram",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {

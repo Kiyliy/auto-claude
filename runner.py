@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Auto-Claude Runner — headless (-p) mode engine with self-managed review loop.
+SleepShip Runner — headless (-p) mode engine with self-managed review loop.
 
 Flow:
   CC works → result event → runner.py runs Sonnet review →
@@ -25,14 +25,14 @@ import socket as sock
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Auto-Claude runner")
+    p = argparse.ArgumentParser(description="SleepShip runner")
     p.add_argument("--project", required=True, help="Project directory (must contain GOAL.md)")
     p.add_argument("--goal", default="GOAL.md", help="Goal file name")
     p.add_argument("--max-turns", type=int, default=100, help="Max turns")
     p.add_argument("--review-model", default="claude-sonnet-4-6", help="Model for review")
     p.add_argument("--review-timeout", type=int, default=1800, help="Review timeout in seconds")
     p.add_argument("--target-score", type=int, default=90, help="Target score to pass")
-    p.add_argument("--socket", default=os.path.expanduser("~/.auto-claude/channel.sock"))
+    p.add_argument("--socket", default=os.path.expanduser("~/.sleepship/channel.sock"))
     p.add_argument("--session-id", default=None, help="Reuse specific session ID")
     p.add_argument("--resume", action="store_true", help="Resume last session")
     return p.parse_args()
@@ -114,7 +114,7 @@ def make_msg(text):
 # --- Session persistence ---
 
 def session_file(project_dir):
-    return os.path.join(project_dir, ".auto-claude", "session.json")
+    return os.path.join(project_dir, ".sleepship", "session.json")
 
 
 def save_session(project_dir, sid, turn_count=0):
@@ -221,7 +221,7 @@ ok=true only when total >= {ARGS.target_score}."""
 
 def save_review(project_dir, parsed):
     """Append review result to reviews.jsonl."""
-    review_log = os.path.join(project_dir, ".auto-claude", "reviews.jsonl")
+    review_log = os.path.join(project_dir, ".sleepship", "reviews.jsonl")
     parsed["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     parsed["reviewer"] = ARGS.review_model
     try:
@@ -242,7 +242,7 @@ def main():
         print(f"ERROR: {project_dir} not found", file=sys.stderr)
         sys.exit(1)
 
-    os.makedirs(os.path.join(project_dir, ".auto-claude"), exist_ok=True)
+    os.makedirs(os.path.join(project_dir, ".sleepship"), exist_ok=True)
 
     # Session ID
     is_resume = ARGS.resume
@@ -302,7 +302,7 @@ def main():
     alive = True
 
     # Raw stream-json log
-    raw_log_path = os.path.join(project_dir, ".auto-claude", f"{SESSION_ID}.log")
+    raw_log_path = os.path.join(project_dir, ".sleepship", f"{SESSION_ID}.log")
     raw_log = open(raw_log_path, "a")
 
     # Stderr reader

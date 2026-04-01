@@ -11,14 +11,14 @@ export interface ChannelConfig {
   groupMode: boolean;
 }
 
-/** Default locations under ~/.auto-claude */
-export const AUTO_CLAUDE_DIR = join(homedir(), ".auto-claude");
-export const DEFAULT_SOCKET_PATH = join(AUTO_CLAUDE_DIR, "channel.sock");
-export const STATE_DIR = join(AUTO_CLAUDE_DIR, "state");
-export const PID_FILE = join(AUTO_CLAUDE_DIR, "channel.pid");
+/** Default locations under ~/.sleepship */
+export const SLEEPSHIP_DIR = join(homedir(), ".sleepship");
+export const DEFAULT_SOCKET_PATH = join(SLEEPSHIP_DIR, "channel.sock");
+export const STATE_DIR = join(SLEEPSHIP_DIR, "state");
+export const PID_FILE = join(SLEEPSHIP_DIR, "channel.pid");
 export const SESSIONS_FILE = join(STATE_DIR, "channel-sessions.json");
 
-const CONFIG_PATH = join(AUTO_CLAUDE_DIR, "config.env");
+const CONFIG_PATH = join(SLEEPSHIP_DIR, "config.env");
 
 /**
  * Parse a config.env file (KEY=VALUE lines).
@@ -59,7 +59,7 @@ function parseEnvFile(filePath: string): Record<string, string> {
 }
 
 /**
- * Load configuration from environment variables and ~/.auto-claude/config.env.
+ * Load configuration from environment variables and ~/.sleepship/config.env.
  * Environment variables take precedence over config file values.
  */
 export function loadConfig(): ChannelConfig {

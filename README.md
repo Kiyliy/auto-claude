@@ -1,4 +1,8 @@
-# auto-claude
+# sleepship
+
+> **Sleep. Ship.**
+
+Define the goal, go to sleep, wake up to a shipped app.
 
 Autonomous AI development framework built on [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
@@ -10,7 +14,7 @@ A simple syllogism:
 2. **AI can improve iteratively toward a target score.** Given specific feedback ("auth returns 401", "3 tests failing", "mobile layout broken"), an LLM can diagnose and fix — just like a human developer reading a code review.
 3. **Therefore, build the loop.** If the goal is scorable and the agent is improvable, the only thing missing is the loop: work → score → feedback → repeat until pass.
 
-That's all auto-claude is: **the loop**.
+That's all sleepship is: **the loop**.
 
 You define the goal (`GOAL.md`), the framework scores it (independent reviewer, 10 dimensions, 0-100), and feeds the result back. The agent keeps working until the score crosses the threshold — or you tell it to stop.
 
@@ -51,8 +55,8 @@ python3 runner.py --project ~/myapp
 Real-time progress updates and bidirectional communication via Telegram.
 
 ```bash
-mkdir -p ~/.auto-claude
-cp config.env.example ~/.auto-claude/config.env
+mkdir -p ~/.sleepship
+cp config.env.example ~/.sleepship/config.env
 # Edit config.env with your bot token and chat ID
 
 cd channel && npm install && cd ..
@@ -89,7 +93,7 @@ python3 runner.py \
 ## Project structure
 
 ```
-auto-claude/
+sleepship/
 ├── runner.py                  # Headless mode engine + review loop
 ├── scoring.md                 # 10-dimension scoring rubric
 ├── config.env.example         # Telegram configuration template

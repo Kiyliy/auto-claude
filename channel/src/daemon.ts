@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Auto-Claude Channel Daemon — standalone long-running process.
+ * SleepShip Channel Daemon — standalone long-running process.
  *
  * Manages:
  *   - Telegram long-polling (single connection per bot token)
- *   - HTTP API on a Unix domain socket (~/.auto-claude/channel.sock)
+ *   - HTTP API on a Unix domain socket (~/.sleepship/channel.sock)
  *   - Session registry with Telegram topic isolation
  *   - Message routing: Telegram topic -> session message queue
  *
@@ -757,7 +757,7 @@ function checkExistingDaemon(): number | null {
 async function main(): Promise<void> {
   const config = loadConfig();
 
-  log("info", "Auto-Claude Channel Daemon starting...");
+  log("info", "SleepShip Channel Daemon starting...");
   log("info", `  bot_token:  ${config.botToken ? "configured" : "NOT SET"}`);
   log("info", `  chat_id:    ${config.chatId ?? "NOT SET"}`);
   log("info", `  socket:     ${config.socketPath}`);
