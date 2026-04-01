@@ -25,7 +25,7 @@ cp examples/GOAL.template.md ~/myapp/GOAL.md
 # Edit it with your project spec
 
 # 2. Run
-python3 scripts/runner.py --project ~/myapp
+python3 runner.py --project ~/myapp
 ```
 
 ## Setup
@@ -61,13 +61,13 @@ This configures a Stop hook that runs an independent Sonnet review whenever CC t
 
 ```bash
 # New session
-python3 scripts/runner.py --project ~/myapp
+python3 runner.py --project ~/myapp
 
 # Resume previous session
-python3 scripts/runner.py --project ~/myapp --resume
+python3 runner.py --project ~/myapp --resume
 
 # Custom options
-python3 scripts/runner.py \
+python3 runner.py \
   --project ~/myapp \
   --review-model claude-sonnet-4-6 \
   --target-score 85 \
@@ -78,18 +78,14 @@ python3 scripts/runner.py \
 
 ```
 auto-claude/
-├── scripts/runner.py          # Headless mode engine + review loop
-├── hooks/review-hook.sh       # Shell-based stop hook (alternative)
-├── prompts/scoring.md         # 10-dimension scoring rubric
+├── runner.py                  # Headless mode engine + review loop
+├── scoring.md                 # 10-dimension scoring rubric
 ├── config.env.example         # Telegram configuration template
 ├── settings.example.json      # Claude Code agent hook config
 ├── channel/src/               # Telegram notification daemon
 │   ├── daemon.ts              # HTTP API + TG long-polling
 │   ├── telegram.ts            # Telegram Bot API helpers
 │   └── config.ts              # Configuration loader
-├── examples/
-│   ├── GOAL.template.md       # GOAL.md template
-│   └── twitter-clone/         # Example: Twitter/X clone
 └── LICENSE
 ```
 
@@ -130,8 +126,6 @@ mvp
 ## Success Criteria
 - Score >= 90/100
 ```
-
-See `examples/GOAL.template.md` for a full template.
 
 ## Architecture
 
