@@ -17,7 +17,7 @@ Next.js + TypeScript + Tailwind CSS + SQLite
 - [ ] Feature 3
 
 ## Success Criteria
-- Score >= 90/100
+- Three-level review all pass (L1/L2/L3 = 100)
 - Core flow fully working
 - One-command start works
 
@@ -27,4 +27,4 @@ See [agentloop.md](agentloop.md) — defines how the agent should operate, what 
 ## Rules
 - Git commit after each batch of changes
 - Make decisions autonomously, do not stop to ask
-- Prioritize fixing the lowest-scoring dimensions
+- Prioritize fixing the lowest-scoring level first

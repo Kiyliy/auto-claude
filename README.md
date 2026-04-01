@@ -11,12 +11,12 @@ Autonomous AI development framework built on [Claude Code](https://docs.anthropi
 A simple syllogism:
 
 1. **Any goal can be scored.** Whether it's "build a login page" or "migrate to TypeScript" — you can verify the result through tests, endpoint checks, or end-to-end usage, and convert that into a number.
-2. **AI can improve iteratively toward a target score.** Given specific feedback ("auth returns 401", "3 tests failing", "mobile layout broken"), an LLM can diagnose and fix — just like a human developer reading a code review.
+2. **AI can improve iteratively toward a target score.** Given specific feedback ("auth returns 401", "3 tests failing", "core flow broken"), an LLM can diagnose and fix — just like a human developer reading a code review.
 3. **Therefore, build the loop.** If the goal is scorable and the agent is improvable, the only thing missing is the loop: work → score → feedback → repeat until pass.
 
 That's all sleepship is: **the loop**.
 
-You define the goal (`GOAL.md`), the framework scores it (independent reviewer, 10 dimensions, 0-100), and feeds the result back. The agent keeps working until the score crosses the threshold — or you tell it to stop.
+You define the goal (`GOAL.md`), the framework scores it through a three-level review (L1 basics → L2 modules → L3 quality, each must hit 100), and feeds the result back. The agent keeps working until all three levels pass — or you tell it to stop.
 
 ## How it works
 
@@ -24,22 +24,19 @@ You define the goal (`GOAL.md`), the framework scores it (independent reviewer, 
 GOAL.md  →  Claude Code (headless)  →  Independent Reviewer (Sonnet)
                     ↑                           ↓
                     └── feedback injection ──────┘
-                         (score < 90 → keep going)
+                    (L1/L2/L3 any < 100 → keep going)
 ```
 
 1. Write a `GOAL.md` in your project — features, success criteria, quality level
 2. Run `runner.py` — Claude Code works autonomously in headless (`-p`) mode
-3. After each turn, an independent Sonnet agent reviews and scores the project (10 dimensions, 0-100)
-4. Score < 90 → feedback is injected back into CC → keeps working
-5. Score >= 90 → done
+3. After each turn, an independent Sonnet agent runs a three-level review
+4. Any level < 100 → feedback is injected back → keeps working
+5. All three levels = 100 → done
 
 ## Quick start
 
 ```bash
-# 1. Create a GOAL.md in your project
-cp examples/GOAL.template.md ~/myapp/GOAL.md
-# Edit it with your project spec
-
+# 1. Create a GOAL.md in your project (see GOAL.index.md for template)
 # 2. Run
 python3 runner.py --project ~/myapp
 ```
@@ -71,7 +68,7 @@ Instead of the runner, you can use Claude Code's native agent hook:
 cp settings.example.json ~/.claude/settings.json
 ```
 
-This configures a Stop hook that runs an independent Sonnet review whenever CC tries to stop. If the score is < 90, the hook blocks the stop and CC continues working.
+This configures a Stop hook that runs an independent Sonnet review whenever CC tries to stop. If it doesn't pass, the hook blocks the stop and CC continues working.
 
 ## Usage
 
@@ -86,7 +83,6 @@ python3 runner.py --project ~/myapp --resume
 python3 runner.py \
   --project ~/myapp \
   --review-model claude-sonnet-4-6 \
-  --target-score 85 \
   --max-turns 50
 ```
 
@@ -95,7 +91,10 @@ python3 runner.py \
 ```
 sleepship/
 ├── runner.py                  # Headless mode engine + review loop
-├── scoring.md                 # 10-dimension scoring rubric
+├── scoring.md                 # Three-level scoring rubric (L1/L2/L3)
+├── SKILLS.md                  # Agent operational manual (3 phases)
+├── GOAL.index.md              # GOAL.md template for new projects
+├── agentloop.md               # Agent loop discipline (team, skills, failure handling)
 ├── config.env.example         # Telegram configuration template
 ├── settings.example.json      # Claude Code agent hook config
 ├── channel/src/               # Telegram notification daemon
@@ -107,22 +106,17 @@ sleepship/
 
 ## Scoring
 
-10 dimensions, 0-10 each (max 100):
+Three-level review, each scored 0-100. All three must hit 100 to pass.
 
-| # | Dimension | What it measures |
-|---|-----------|-----------------|
-| 1 | Goal Completion | Every GOAL.md feature actually works |
-| 2 | UI/UX Quality | Consistent, polished, no glitches |
-| 3 | Responsive Design | Works on mobile/tablet/desktop |
-| 4 | Functional Correctness | Core flows work end-to-end |
-| 5 | Code Quality | Type-safe, no dead code, consistent patterns |
-| 6 | Test Coverage | Core logic tested, tests pass |
-| 7 | Error Handling | User-friendly errors, loading states |
-| 8 | Security | Auth, input sanitization, no secrets leaked |
-| 9 | Documentation | README, .env.example, setup instructions |
-| 10 | Runnability | One-command start, works on fresh clone |
+| Level | What it checks | Pass condition |
+|-------|---------------|----------------|
+| **L1: Basics** | Can it start? Are all features real (no mock/TODO/fallback)? Build passes? | = 100 |
+| **L2: Modules** | Each feature tested end-to-end. Edge cases, error paths, module integration. | = 100 |
+| **L3: Quality** | Code quality, security, test coverage, documentation. | = 100 |
 
-The reviewer actually runs the project (starts servers, curls endpoints, runs tests) — not just code review.
+Upper level gates lower: L1 fail → skip L2/L3.
+
+The reviewer actually runs the project (starts servers, curls endpoints, calls contracts, runs tests) — not just code review. See [scoring.md](scoring.md) for full rubric.
 
 ## GOAL.md format
 
@@ -140,14 +134,23 @@ mvp
 - [ ] Feature 2
 
 ## Success Criteria
-- Score >= 90/100
+- Three-level review all pass (L1/L2/L3 = 100)
+
+## Agent Loop
+See agentloop.md
+
+## Rules
+- Git commit after each batch of changes
+- Make decisions autonomously, do not stop to ask
 ```
+
+See [GOAL.index.md](GOAL.index.md) for full template.
 
 ## Architecture
 
 **Runner mode** (`runner.py`): Python process manages the CC lifecycle. Spawns CC in `--input-format stream-json` mode, reads result events, runs independent review, and injects feedback via stdin. Also polls the Telegram daemon for human messages.
 
-**Hook mode** (`review-hook.sh` / `settings.json`): Uses CC's native agent hook on the Stop event. Lighter weight — CC manages itself, the hook just gates when it's allowed to stop.
+**Hook mode** (`settings.json`): Uses CC's native agent hook on the Stop event. Lighter weight — CC manages itself, the hook just gates when it's allowed to stop.
 
 **Telegram daemon** (`channel/`): Node.js process that provides a Unix socket HTTP API. Manages Telegram long-polling, session-to-topic routing, and message queues. Enables bidirectional human-in-the-loop communication.
 
