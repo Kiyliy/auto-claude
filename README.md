@@ -40,7 +40,7 @@ Real-time progress updates and bidirectional communication via Telegram.
 
 ```bash
 mkdir -p ~/.auto-claude
-cp config/config.env.example ~/.auto-claude/config.env
+cp config.env.example ~/.auto-claude/config.env
 # Edit config.env with your bot token and chat ID
 
 cd channel && npm install && cd ..
@@ -52,7 +52,7 @@ npx tsx channel/src/daemon.ts &
 Instead of the runner, you can use Claude Code's native agent hook:
 
 ```bash
-cp config/settings.json ~/.claude/settings.json
+cp settings.example.json ~/.claude/settings.json
 ```
 
 This configures a Stop hook that runs an independent Sonnet review whenever CC tries to stop. If the score is < 90, the hook blocks the stop and CC continues working.
@@ -81,9 +81,8 @@ auto-claude/
 ├── scripts/runner.py          # Headless mode engine + review loop
 ├── hooks/review-hook.sh       # Shell-based stop hook (alternative)
 ├── prompts/scoring.md         # 10-dimension scoring rubric
-├── config/
-│   ├── settings.json          # Claude Code agent hook config
-│   └── config.env.example     # Telegram configuration template
+├── config.env.example         # Telegram configuration template
+├── settings.example.json      # Claude Code agent hook config
 ├── channel/src/               # Telegram notification daemon
 │   ├── daemon.ts              # HTTP API + TG long-polling
 │   ├── telegram.ts            # Telegram Bot API helpers

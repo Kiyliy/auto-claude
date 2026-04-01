@@ -7,3 +7,4 @@ workspace/
 .auto-claude/
 hooks/
 examples/
+config/
