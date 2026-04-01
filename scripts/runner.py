@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Auto-Claude Runner — headless (-p) mode engine
+Auto-Claude Runner — headless (-p) mode engine with self-managed review loop.
+
+Flow:
+  CC works → result event → runner.py runs Sonnet review →
+    score < 90 → inject feedback into CC stdin → CC continues
+    score >= 90 → stop
 
 Usage:
   python3 runner.py --project ~/myapp
@@ -15,16 +20,19 @@ import uuid
 import os
 import sys
 import time
+import re
 import socket as sock
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Auto-Claude runner")
     p.add_argument("--project", required=True, help="Project directory (must contain GOAL.md)")
-    p.add_argument("--goal", default="GOAL.md", help="Goal file name (default: GOAL.md)")
-    p.add_argument("--max-turns", type=int, default=100, help="Max turns (default: 100)")
+    p.add_argument("--goal", default="GOAL.md", help="Goal file name")
+    p.add_argument("--max-turns", type=int, default=100, help="Max turns")
+    p.add_argument("--review-model", default="claude-sonnet-4-6", help="Model for review")
+    p.add_argument("--review-timeout", type=int, default=1800, help="Review timeout in seconds")
+    p.add_argument("--target-score", type=int, default=90, help="Target score to pass")
     p.add_argument("--socket", default=os.path.expanduser("~/.auto-claude/channel.sock"))
-    p.add_argument("--log", default=None, help="Log file (default: PROJECT/.auto-claude/runner.log)")
     p.add_argument("--session-id", default=None, help="Reuse specific session ID")
     p.add_argument("--resume", action="store_true", help="Resume last session")
     return p.parse_args()
@@ -36,18 +44,12 @@ SESSION_ID = None
 
 def log(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
-    line = f"[{ts} UTC] {msg}"
-    print(line, flush=True)
-    if ARGS and ARGS.log:
-        try:
-            with open(ARGS.log, "a") as f:
-                f.write(line + "\n")
-        except Exception:
-            pass
+    print(f"[{ts} UTC] {msg}", file=sys.stderr, flush=True)
 
+
+# --- TG daemon communication ---
 
 def daemon_request(method, path, body=None, timeout=5):
-    """Unix socket HTTP request to TG daemon."""
     try:
         s = sock.socket(sock.AF_UNIX, sock.SOCK_STREAM)
         s.settimeout(timeout)
@@ -67,7 +69,6 @@ def daemon_request(method, path, body=None, timeout=5):
             except Exception:
                 break
         s.close()
-        # Parse chunked HTTP response
         raw = data.split(b"\r\n\r\n", 1)[-1]
         body_bytes = b""
         parts = raw.split(b"\r\n")
@@ -91,6 +92,14 @@ def notify(message, event_type="info"):
     try:
         payload = json.dumps({"message": message, "event_type": event_type, "session_id": SESSION_ID})
         daemon_request("POST", "/notify", payload)
+    except Exception:
+        pass
+
+
+def tg_reply(text):
+    try:
+        payload = json.dumps({"text": text})
+        daemon_request("POST", f"/sessions/{SESSION_ID}/reply", payload)
     except Exception:
         pass
 
@@ -136,6 +145,92 @@ def read_goal(project_dir, goal_file):
         return f.read()
 
 
+# --- Review ---
+
+def run_review(project_dir):
+    """Run independent Sonnet review. Returns (score, ok, reason, parsed_json)."""
+    scoring = ""
+    for f in ["scoring.md", "GOAL.md", "requirements.md"]:
+        path = os.path.join(project_dir, f)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as fh:
+                scoring += f"\n\n=== {f} ===\n{fh.read()}"
+
+    prompt = f"""You are working in {project_dir}.
+
+{scoring}
+
+Follow scoring.md strictly: start the server, curl-test endpoints, check code, score.
+Output strict JSON:
+{{"ok": true/false, "total": N, "scores": {{}}, "bugs": [...], "reason": "..."}}
+
+ok=true only when total >= {ARGS.target_score}."""
+
+    log(f"Starting review ({ARGS.review_model})...")
+
+    try:
+        result = subprocess.run(
+            ["claude", "-p",
+             "--model", ARGS.review_model,
+             "--output-format", "stream-json",
+             "--verbose",
+             "--dangerously-skip-permissions",
+             prompt],
+            capture_output=True, text=True, timeout=ARGS.review_timeout,
+            cwd=project_dir,
+        )
+        # Extract result text from stream-json
+        review_text = ""
+        for line in result.stdout.strip().split("\n"):
+            try:
+                d = json.loads(line)
+                if d.get("type") == "result":
+                    review_text = d.get("result", "")
+                    break
+            except Exception:
+                continue
+
+    except subprocess.TimeoutExpired:
+        log("Review timed out")
+        return 0, False, "review timed out", {}
+    except Exception as e:
+        log(f"Review error: {e}")
+        return 0, False, f"review error: {e}", {}
+
+    # Parse JSON from review text
+    raw = review_text.strip()
+    raw = re.sub(r"^```json\s*", "", raw)
+    raw = re.sub(r"```\s*$", "", raw)
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start >= 0 and end > start:
+        raw = raw[start:end + 1]
+
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        log(f"Review parse failed. Raw: {raw[:200]}")
+        return 0, False, "parse failed", {"raw": raw[:500]}
+
+    total = parsed.get("total", 0)
+    ok = parsed.get("ok", False)
+    reason = parsed.get("reason", "")
+    log(f"Review: {total}/{ARGS.target_score} ok={ok}")
+    return total, ok, reason, parsed
+
+
+def save_review(project_dir, parsed):
+    """Append review result to reviews.jsonl."""
+    review_log = os.path.join(project_dir, ".auto-claude", "reviews.jsonl")
+    parsed["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    parsed["reviewer"] = ARGS.review_model
+    try:
+        with open(review_log, "a") as f:
+            f.write(json.dumps(parsed, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 # --- Main ---
 
 def main():
@@ -148,11 +243,9 @@ def main():
         sys.exit(1)
 
     os.makedirs(os.path.join(project_dir, ".auto-claude"), exist_ok=True)
-    if ARGS.log is None:
-        ARGS.log = os.path.join(project_dir, ".auto-claude", "runner.log")
 
     # Session ID
-    is_resume = False
+    is_resume = ARGS.resume
     if ARGS.session_id:
         SESSION_ID = ARGS.session_id
     elif ARGS.resume:
@@ -177,7 +270,7 @@ def main():
 
     notify(f"{'Resumed' if is_resume else 'Started'} {SESSION_ID[:8]}", "start")
 
-    # Build CC command
+    # Build CC command — NO hooks, runner manages the loop
     cmd = ["claude", "-p",
            "--input-format", "stream-json",
            "--output-format", "stream-json",
@@ -188,7 +281,7 @@ def main():
     else:
         cmd += ["--session-id", SESSION_ID]
 
-    log(f"Starting CC...")
+    log("Starting CC...")
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             cwd=project_dir)
 
@@ -205,7 +298,12 @@ def main():
     turn_count = 0
     save_session(project_dir, SESSION_ID, turn_count)
     last_activity = time.time()
+    last_assistant_text = ""
     alive = True
+
+    # Raw stream-json log
+    raw_log_path = os.path.join(project_dir, ".auto-claude", f"{SESSION_ID}.log")
+    raw_log = open(raw_log_path, "a")
 
     # Stderr reader
     def read_stderr():
@@ -215,7 +313,7 @@ def main():
                 log(f"stderr: {line[:200]}")
     threading.Thread(target=read_stderr, daemon=True).start()
 
-    # TG message poller — injects Telegram messages into CC stdin
+    # TG message poller
     def tg_poller():
         nonlocal last_activity
         while alive and proc.poll() is None:
@@ -240,13 +338,16 @@ def main():
             time.sleep(3)
     threading.Thread(target=tg_poller, daemon=True).start()
 
-    # Read stdout (stream-json events)
+    # Main event loop
     try:
         for raw_line in proc.stdout:
             line = raw_line.decode("utf-8", errors="replace").strip()
             if not line:
                 continue
             last_activity = time.time()
+            raw_log.write(line + "\n")
+            raw_log.flush()
+
             try:
                 msg = json.loads(line)
             except Exception:
@@ -254,34 +355,62 @@ def main():
 
             msg_type = msg.get("type", "")
 
+            # Track last assistant text
             if msg_type == "assistant":
                 for block in msg.get("message", {}).get("content", []):
-                    if not isinstance(block, dict):
-                        continue
-                    if block.get("type") == "text":
-                        log(f"CC: {block['text'][:200]}")
-                    elif block.get("type") == "tool_use":
-                        log(f"CC tool: {block.get('name', '?')}")
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        t = block["text"].strip()
+                        if len(t) > 10:
+                            last_assistant_text = t
 
-            elif msg_type == "result":
+            if msg_type == "result":
                 turn_count += 1
                 save_session(project_dir, SESSION_ID, turn_count)
-                log(f"Turn {turn_count} complete")
-                notify(f"Turn {turn_count} done", "turn")
+
+                # Forward CC's last message to TG
+                if last_assistant_text:
+                    tg_reply(f"📋 Turn {turn_count}:\n\n{last_assistant_text[:2000]}")
+                    last_assistant_text = ""
 
                 if turn_count >= ARGS.max_turns:
-                    log(f"Max turns ({ARGS.max_turns}) reached")
-                    notify(f"Max turns reached", "max_reached")
+                    notify(f"Max turns ({ARGS.max_turns}) reached", "max_reached")
                     break
 
-                # No continuation message needed — the Stop hook handles it.
-                # If the hook blocks (ok=false), CC continues automatically.
-                # If the hook allows (ok=true), CC stops and we get no more events.
+                # --- Run independent review ---
+                log(f"Turn {turn_count} done. Running review...")
+                notify(f"Turn {turn_count} done, reviewing...", "review")
+
+                total, ok, reason, parsed = run_review(project_dir)
+                save_review(project_dir, parsed)
+
+                # Send review result to TG
+                tg_reply(f"🔍 Review: {total}/{ARGS.target_score}\n{'✅ PASS' if ok else '❌ FAIL'}\n\n{reason[:1500]}")
+
+                if ok and total >= ARGS.target_score:
+                    log(f"PASSED! Score {total} >= {ARGS.target_score}")
+                    notify(f"PASSED! {total}/{ARGS.target_score}", "passed")
+                    break
+
+                # Inject review feedback into CC
+                feedback = f"""Independent reviewer ({ARGS.review_model}) score: {total}/{ARGS.target_score}
+
+{reason}
+
+Continue improving the project based on this feedback. Fix bugs first, then improve the lowest-scoring dimensions."""
+
+                log(f"Injecting feedback (score={total})...")
+                try:
+                    proc.stdin.write(make_msg(feedback))
+                    proc.stdin.flush()
+                except Exception:
+                    log("Failed to inject feedback, CC may have exited")
+                    break
 
     except Exception as e:
         log(f"Error: {e}")
     finally:
         alive = False
+        raw_log.close()
         save_session(project_dir, SESSION_ID, turn_count)
         log(f"Finished. Turns={turn_count}")
         notify(f"Done, {turn_count} turns", "complete")

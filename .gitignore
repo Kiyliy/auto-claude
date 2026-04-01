@@ -4,3 +4,4 @@ node_modules/
 channel/dist/
 __pycache__/
 workspace/
+.auto-claude/
