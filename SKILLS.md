@@ -1,307 +1,150 @@
-# SleepShip 技能手册
+# SleepShip Skills
 
-在任何项目中使用 sleepship 的实战指南——从零开始或中途接入均可。
+本文件是 SleepShip agent 的操作手册。当用户要求你用 sleepship 启动或管理一个项目时，按以下流程执行。
 
 ---
 
-## 技能 1：从零建应用
+## Phase 1: 需求梳理
 
-**适用场景：** 你有一个想法，但还没有任何代码。
+在写任何代码之前，先跟用户充分沟通。
+
+### 1.1 理解需求
+
+向用户确认以下信息：
+
+- **项目目标**：要构建什么？解决什么问题？
+- **核心功能清单**：逐条列出，每条必须具体可测试
+- **技术栈偏好**：前端/后端/数据库/第三方服务
+- **质量标准**：demo（能跑通）/ mvp（日常可用）/ pmf（生产级）
+- **成功标准**：怎么算"做完了"？
+
+### 1.2 收集资产
+
+向用户索要项目运行和端到端测试所需的资产。这些资产对自动化测试至关重要：
+
+**常见资产类型：**
+
+| 项目类型 | 需要的资产 |
+|---------|-----------|
+| 链上项目 | 钱包私钥、RPC endpoint、测试网代币、合约地址 |
+| SaaS / Web 应用 | 第三方 API key（Stripe、OpenAI、SendGrid 等） |
+| Telegram Bot | Bot token、测试群 chat ID |
+| 数据库项目 | 连接字符串、seed 数据 |
+| OAuth 项目 | Client ID/Secret、回调 URL |
+
+**存放位置：** 所有资产存入 `PROJECT/.sleepship/.asset/`
+
+```
+.sleepship/
+└── .asset/
+    ├── .env                # 环境变量（API keys、secrets）
+    ├── wallet.json         # 钱包/凭证文件
+    └── seed-data/          # 测试用种子数据
+```
+
+**注意：** `.sleepship/` 目录已在 `.gitignore` 中，资产不会被提交到 git。
+
+### 1.3 落实文档
+
+把沟通结果写入项目根目录的以下文件：
+
+- **`GOAL.md`** — 项目目标、功能清单、技术栈、成功标准、规则
+- **`scoring.md`** — 评分维度（可从 sleepship 默认模板复制，根据项目调整）
+
+文档写完后，让用户确认再继续。
+
+---
+
+## Phase 2: 启动项目
+
+需求确认、资产到位后，启动 runner：
 
 ```bash
-mkdir ~/myapp && cd ~/myapp
-git init
-
-# 写你的 GOAL.md
-cat > GOAL.md << 'EOF'
-# My App
-
-## Goal
-Build a task management app with real-time collaboration.
-
-## Level
-mvp
-
-## Tech Stack
-Next.js + TypeScript + Tailwind CSS + Prisma + SQLite
-
-## Core Features
-- [ ] User registration and login
-- [ ] Create / edit / delete tasks
-- [ ] Drag-and-drop kanban board
-- [ ] Real-time updates via WebSocket
-- [ ] Mobile-responsive layout
-
-## Success Criteria
-- Score >= 90/100
-- All features working end-to-end
-- `npm install && npm run dev` works on fresh clone
-
-## Rules
-- Git commit after each batch of changes
-- Make decisions autonomously, do not stop to ask
-- Prioritize fixing the lowest-scoring dimensions
-EOF
-
-# 启动
-python3 /path/to/sleepship/runner.py --project .
+python3 /path/to/sleepship/runner.py --project PROJECT_DIR
 ```
 
-SleepShip 会自动搭建项目骨架、实现功能、测试、接受评审、迭代改进，直到通过为止。
+启动后记录：
+- Session ID
+- 启动时间
+- 项目目录
 
 ---
 
-## 技能 2：功能冲刺（在已有项目上加功能）
+## Phase 3: 监控循环
 
-**适用场景：** 你有一个能跑的项目，想加一个大功能。
+项目启动后，进入监控循环。这是 SleepShip 的核心运行模式：
 
-```bash
-cd ~/existing-app
-
-cat > GOAL.md << 'EOF'
-# Payment Integration
-
-## Goal
-Add Stripe payment processing to the existing e-commerce app.
-
-## Level
-mvp
-
-## Core Features
-- [ ] Stripe checkout flow
-- [ ] Payment confirmation page
-- [ ] Order history with payment status
-- [ ] Webhook handler for async events
-- [ ] Refund support from admin panel
-
-## Existing Context
-- App runs on Next.js, already has user auth and product catalog
-- Database: Prisma + PostgreSQL
-- Start with: `npm run dev` on port 3000
-
-## Success Criteria
-- Score >= 90/100
-- Existing features still work (no regressions)
-- Stripe test mode checkout completes end-to-end
-
-## Rules
-- Do NOT rewrite existing code unless necessary
-- Git commit after each batch of changes
-- Run existing tests before and after changes
-EOF
-
-python3 /path/to/sleepship/runner.py --project .
+```
+┌─────────────────────────────────┐
+│                                 │
+│   sleep 600（等待 10 分钟）       │
+│           ↓                     │
+│   检查项目状态                    │
+│   - runner 是否还在运行？         │
+│   - 最新的 review 分数是多少？    │  
+│   - 有没有报错或卡住？            │
+│           ↓                     │
+│   向用户汇报结果                  │
+│   - 当前轮次 / 总轮次            │
+│   - 最新分数及变化趋势            │
+│   - 遇到的问题（如有）            │
+│           ↓                     │
+│   继续 sleep 600                │
+│                                 │
+└─────────────────────────────────┘
 ```
 
-**关键：** `## Existing Context` 告诉 agent 项目现有的技术栈和上下文，避免它从头重写。
+### 监控要做的事
+
+每次 sleep 醒来后：
+
+1. **检查 runner 进程** — 是否还活着
+2. **读取最新 review** — `PROJECT/.sleepship/reviews.jsonl` 最后一行
+3. **读取 session 状态** — `PROJECT/.sleepship/session.json` 的 turn_count
+4. **检查日志** — `PROJECT/.sleepship/{SESSION_ID}.log` 末尾有无异常
+5. **汇报给用户** — 简洁汇总：轮次、分数、趋势、问题
+6. **如果结束了** — 汇报最终结果，告诉用户项目完成或需要人工介入
+
+### 汇报模板
+
+```
+📊 SleepShip 状态报告
+━━━━━━━━━━━━━━━━━━
+项目：{project_name}
+轮次：{turn_count} / {max_turns}
+最新分数：{score} / {target_score}
+趋势：{上次分数} → {本次分数}（{+/-变化}）
+状态：{运行中 / 已完成 / 已停止 / 异常}
+
+{如有问题，简述问题和建议}
+```
+
+### 异常处理
+
+| 情况 | 处理 |
+|------|------|
+| runner 进程挂了 | 尝试 `--resume` 恢复，汇报给用户 |
+| 分数连续 3 轮不涨 | 提醒用户可能需要调整 GOAL.md 或人工介入 |
+| 分数倒退 | 立即汇报，建议查看最近改动 |
+| 达到 max-turns 仍未通过 | 汇报最终分数，建议下一步行动 |
 
 ---
 
-## 技能 3：Bug 大扫除（修 bug + 加固）
+## 完整流程总结
 
-**适用场景：** 应用基本能用，但有质量问题——bug、缺少错误处理、测试覆盖不够。
-
-```bash
-cd ~/my-buggy-app
-
-cat > GOAL.md << 'EOF'
-# Quality Hardening
-
-## Goal
-Fix all known bugs, add missing error handling, and reach 80%+ test coverage.
-
-## Level
-pmf
-
-## Known Bugs
-- [ ] Login fails silently when server is down
-- [ ] File upload crashes on files > 10MB
-- [ ] Race condition in concurrent task updates
-- [ ] Mobile nav menu doesn't close on route change
-
-## Hardening Tasks
-- [ ] Add error boundaries to all pages
-- [ ] Add loading states to all async operations
-- [ ] Input validation on all forms (client + server)
-- [ ] Rate limiting on auth endpoints
-- [ ] Add integration tests for core user flows
-
-## Success Criteria
-- Score >= 90/100
-- Zero console errors during normal usage
-- All known bugs fixed with regression tests
-
-## Rules
-- Write a test for each bug BEFORE fixing it
-- Git commit after each fix (one bug per commit)
-- Do not add new features
-EOF
-
-python3 /path/to/sleepship/runner.py --project . --target-score 90
 ```
-
----
-
-## 技能 4：快速原型（低门槛，求速度）
-
-**适用场景：** 黑客松、演示、概念验证——需要一个能跑的 demo。
-
-```bash
-cat > GOAL.md << 'EOF'
-# AI Chat Widget
-
-## Goal
-Build an embeddable AI chat widget that connects to OpenAI API.
-
-## Level
-demo
-
-## Core Features
-- [ ] Floating chat bubble in bottom-right corner
-- [ ] Chat window with message history
-- [ ] Stream AI responses in real-time
-- [ ] Configurable system prompt
-- [ ] Single-file embed script
-
-## Success Criteria
-- Score >= 70/100
-- Happy path works: open chat → send message → get AI response
-- Can embed in any page with one script tag
-
-## Rules
-- Speed over polish
-- Skip auth, skip tests, skip mobile
-- Single HTML file with inline JS/CSS is fine
-EOF
-
-python3 /path/to/sleepship/runner.py --project . --target-score 70 --max-turns 20
+用户说"帮我搞一个 XX 项目"
+        ↓
+Phase 1: 需求梳理
+  ├── 跟用户沟通，理清需求
+  ├── 索要资产 → .sleepship/.asset/
+  └── 落实 GOAL.md + scoring.md → 用户确认
+        ↓
+Phase 2: 启动项目
+  └── runner.py --project .
+        ↓
+Phase 3: 监控循环
+  └── sleep 600 → 检查状态 → 汇报 → sleep 600 → ...
+        ↓
+项目完成或需要人工介入
 ```
-
-**关键：** `Level: demo` + `--target-score 70` + `--max-turns 20` = 快糙猛，不纠结。
-
----
-
-## 技能 5：重构与迁移
-
-**适用场景：** 技术栈迁移、架构重构、主要依赖升级。
-
-```bash
-cat > GOAL.md << 'EOF'
-# Migration: JavaScript → TypeScript
-
-## Goal
-Convert the entire codebase from JavaScript to TypeScript with strict mode.
-
-## Level
-mvp
-
-## Migration Tasks
-- [ ] Add tsconfig.json with strict: true
-- [ ] Rename all .js/.jsx files to .ts/.tsx
-- [ ] Add type annotations to all functions and components
-- [ ] Replace `any` types with proper types
-- [ ] Fix all TypeScript compiler errors
-- [ ] Ensure all existing tests still pass
-
-## Success Criteria
-- Score >= 90/100
-- Zero TypeScript errors with strict mode
-- All existing tests pass
-- No `any` types except in third-party type gaps
-
-## Rules
-- Migrate file-by-file, commit after each batch
-- Do NOT change any business logic
-- Do NOT add new features
-- If a test breaks, fix the migration, not the test
-EOF
-
-python3 /path/to/sleepship/runner.py --project .
-```
-
----
-
-## 如何写好 GOAL.md
-
-### Level 决定评审标准
-
-| Level | 门槛 | 评审员的期望 |
-|-------|------|-------------|
-| `demo` | 主流程能跑通 | 忽略边界情况，不要求打磨 |
-| `mvp` | 日常可用，无明显 bug | 测试核心流程，检查错误处理 |
-| `pmf` | 生产级可上线 | 完整测试覆盖、安全审计、性能达标 |
-
-### Feature 清单 = 合同
-
-`- [ ]` 复选框就是评审员的检查清单。每个未完成项扣 **-3 分**。要写得具体可测试：
-
-```markdown
-# 差——太模糊
-- [ ] User management
-
-# 好——可验证
-- [ ] Register with email + password (validation: email format, password 8+ chars)
-- [ ] Login with email + password (returns JWT, 401 on wrong credentials)
-- [ ] Logout (clears token, redirects to login)
-```
-
-### Existing Context 能省很多时间
-
-对已有项目，务必写明现有上下文：
-
-```markdown
-## Existing Context
-- Framework: Next.js 15 with App Router
-- Database: Prisma + PostgreSQL (schema in prisma/schema.prisma)
-- Auth: NextAuth.js with GitHub provider
-- Start command: `npm run dev` (port 3000)
-- Test command: `npm test`
-```
-
-防止 agent 猜错你的技术栈，或者误覆盖已有代码。
-
-### Rules 控制行为
-
-```markdown
-## Rules
-- Git commit after each batch of changes          # 进度可追踪
-- Make decisions autonomously, do not stop to ask  # 不要停下来问人
-- Prioritize fixing the lowest-scoring dimensions  # 优先补短板
-- Do NOT rewrite existing code unless necessary    # 保护已有代码
-- Write tests before fixing bugs                   # TDD 修 bug
-```
-
----
-
-## Runner 调参指南
-
-| 参数 | 默认值 | 什么时候改 |
-|------|--------|-----------|
-| `--target-score` | 90 | demo 降到 70，生产环境升到 95 |
-| `--max-turns` | 100 | 快速原型降到 20，复杂应用升到 200 |
-| `--review-model` | claude-sonnet-4-6 | 用 opus 做更严格的评审，用 haiku 省钱加速 |
-| `--review-timeout` | 1800 | 大项目评审耗时长，可以加大 |
-
-### 恢复中断的会话
-
-```bash
-# SleepShip 把会话状态存在 PROJECT/.sleepship/session.json
-python3 runner.py --project ~/myapp --resume
-```
-
-### 通过 Telegram 监控
-
-配好 channel daemon 之后：
-- 每轮的产出会转发到你的 Telegram
-- 评审分数在每次 review 后推送
-- 你可以在 Telegram 里发消息，实时注入指令给 agent
-
----
-
-## 实战经验
-
-1. **先 `demo` 再升 `mvp`** —— 先跑通主流程，再打磨质量
-2. **一个 GOAL 一个会话** —— 不要把"加支付"和"修登录 bug"混在一起
-3. **写具体的成功标准** —— "登录能用"太模糊；"POST /api/login 返回 200 + JWT"可验证
-4. **写明测试命令** —— 评审员需要知道怎么跑你的测试
-5. **原型项目限制 max-turns** —— 防止在一次性代码上无限迭代
