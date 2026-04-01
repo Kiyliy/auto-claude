@@ -5,3 +5,5 @@ channel/dist/
 __pycache__/
 workspace/
 .auto-claude/
+hooks/
+examples/
