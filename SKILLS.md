@@ -1,18 +1,18 @@
-# SleepShip Skills Guide
+# SleepShip 技能手册
 
-Practical playbook for using sleepship on any project — from scratch or mid-flight.
+在任何项目中使用 sleepship 的实战指南——从零开始或中途接入均可。
 
 ---
 
-## Skill 1: Zero-to-App (build from nothing)
+## 技能 1：从零建应用
 
-**When:** You have an idea but no code yet.
+**适用场景：** 你有一个想法，但还没有任何代码。
 
 ```bash
 mkdir ~/myapp && cd ~/myapp
 git init
 
-# Write your GOAL.md
+# 写你的 GOAL.md
 cat > GOAL.md << 'EOF'
 # My App
 
@@ -43,17 +43,17 @@ Next.js + TypeScript + Tailwind CSS + Prisma + SQLite
 - Prioritize fixing the lowest-scoring dimensions
 EOF
 
-# Launch
+# 启动
 python3 /path/to/sleepship/runner.py --project .
 ```
 
-Auto-claude will scaffold the project, implement features, test, get reviewed, and iterate until it passes.
+SleepShip 会自动搭建项目骨架、实现功能、测试、接受评审、迭代改进，直到通过为止。
 
 ---
 
-## Skill 2: Feature Sprint (add to existing project)
+## 技能 2：功能冲刺（在已有项目上加功能）
 
-**When:** You have a working codebase and want to add a major feature.
+**适用场景：** 你有一个能跑的项目，想加一个大功能。
 
 ```bash
 cd ~/existing-app
@@ -93,13 +93,13 @@ EOF
 python3 /path/to/sleepship/runner.py --project .
 ```
 
-**Key:** The `## Existing Context` section tells the agent what's already there so it doesn't reinvent the wheel.
+**关键：** `## Existing Context` 告诉 agent 项目现有的技术栈和上下文，避免它从头重写。
 
 ---
 
-## Skill 3: Bug Bash (fix and harden)
+## 技能 3：Bug 大扫除（修 bug + 加固）
 
-**When:** Your app works but has quality issues — bugs, missing error handling, test gaps.
+**适用场景：** 应用基本能用，但有质量问题——bug、缺少错误处理、测试覆盖不够。
 
 ```bash
 cd ~/my-buggy-app
@@ -142,9 +142,9 @@ python3 /path/to/sleepship/runner.py --project . --target-score 90
 
 ---
 
-## Skill 4: Prototype Race (fast demo, low bar)
+## 技能 4：快速原型（低门槛，求速度）
 
-**When:** You need a working demo fast — hackathon, pitch, proof of concept.
+**适用场景：** 黑客松、演示、概念验证——需要一个能跑的 demo。
 
 ```bash
 cat > GOAL.md << 'EOF'
@@ -177,13 +177,13 @@ EOF
 python3 /path/to/sleepship/runner.py --project . --target-score 70 --max-turns 20
 ```
 
-**Key:** `Level: demo` + `--target-score 70` + `--max-turns 20` = fast and loose.
+**关键：** `Level: demo` + `--target-score 70` + `--max-turns 20` = 快糙猛，不纠结。
 
 ---
 
-## Skill 5: Refactor & Migrate
+## 技能 5：重构与迁移
 
-**When:** You need to migrate tech stack, refactor architecture, or upgrade major dependencies.
+**适用场景：** 技术栈迁移、架构重构、主要依赖升级。
 
 ```bash
 cat > GOAL.md << 'EOF'
@@ -221,33 +221,33 @@ python3 /path/to/sleepship/runner.py --project .
 
 ---
 
-## Writing Effective GOAL.md
+## 如何写好 GOAL.md
 
-### Level matters
+### Level 决定评审标准
 
-| Level | Bar | Reviewer expectation |
-|-------|-----|---------------------|
-| `demo` | Happy path works | Ignores edge cases, loose on polish |
-| `mvp` | Daily use, no bugs | Tests core flows, checks error states |
-| `pmf` | Production-ready | Full test coverage, security audit, performance |
+| Level | 门槛 | 评审员的期望 |
+|-------|------|-------------|
+| `demo` | 主流程能跑通 | 忽略边界情况，不要求打磨 |
+| `mvp` | 日常可用，无明显 bug | 测试核心流程，检查错误处理 |
+| `pmf` | 生产级可上线 | 完整测试覆盖、安全审计、性能达标 |
 
-### Feature checklist = contract
+### Feature 清单 = 合同
 
-The `- [ ]` checkboxes are the reviewer's checklist. Each unchecked item costs **-3 points**. Be specific:
+`- [ ]` 复选框就是评审员的检查清单。每个未完成项扣 **-3 分**。要写得具体可测试：
 
 ```markdown
-# Bad — too vague
+# 差——太模糊
 - [ ] User management
 
-# Good — testable
+# 好——可验证
 - [ ] Register with email + password (validation: email format, password 8+ chars)
 - [ ] Login with email + password (returns JWT, 401 on wrong credentials)
 - [ ] Logout (clears token, redirects to login)
 ```
 
-### Existing Context saves time
+### Existing Context 能省很多时间
 
-For existing projects, always include:
+对已有项目，务必写明现有上下文：
 
 ```markdown
 ## Existing Context
@@ -258,50 +258,50 @@ For existing projects, always include:
 - Test command: `npm test`
 ```
 
-This prevents the agent from guessing your stack or accidentally overwriting your setup.
+防止 agent 猜错你的技术栈，或者误覆盖已有代码。
 
-### Rules shape behavior
+### Rules 控制行为
 
 ```markdown
 ## Rules
-- Git commit after each batch of changes          # progress tracking
-- Make decisions autonomously, do not stop to ask  # no pausing for input
-- Prioritize fixing the lowest-scoring dimensions  # smart iteration order
-- Do NOT rewrite existing code unless necessary    # protect existing work
-- Write tests before fixing bugs                   # TDD for bug fixes
+- Git commit after each batch of changes          # 进度可追踪
+- Make decisions autonomously, do not stop to ask  # 不要停下来问人
+- Prioritize fixing the lowest-scoring dimensions  # 优先补短板
+- Do NOT rewrite existing code unless necessary    # 保护已有代码
+- Write tests before fixing bugs                   # TDD 修 bug
 ```
 
 ---
 
-## Tuning the Runner
+## Runner 调参指南
 
-| Flag | Default | When to change |
-|------|---------|---------------|
-| `--target-score` | 90 | Lower for demos (70), raise for production (95) |
-| `--max-turns` | 100 | Lower for quick prototypes (20), raise for complex apps (200) |
-| `--review-model` | claude-sonnet-4-6 | Use opus for harder reviews, haiku for faster/cheaper |
-| `--review-timeout` | 1800 | Increase for large projects where review takes longer |
+| 参数 | 默认值 | 什么时候改 |
+|------|--------|-----------|
+| `--target-score` | 90 | demo 降到 70，生产环境升到 95 |
+| `--max-turns` | 100 | 快速原型降到 20，复杂应用升到 200 |
+| `--review-model` | claude-sonnet-4-6 | 用 opus 做更严格的评审，用 haiku 省钱加速 |
+| `--review-timeout` | 1800 | 大项目评审耗时长，可以加大 |
 
-### Resume interrupted sessions
+### 恢复中断的会话
 
 ```bash
-# SleepShip saves session state in PROJECT/.sleepship/session.json
+# SleepShip 把会话状态存在 PROJECT/.sleepship/session.json
 python3 runner.py --project ~/myapp --resume
 ```
 
-### Monitor via Telegram
+### 通过 Telegram 监控
 
-Set up the channel daemon for real-time updates:
-- Each turn's output is forwarded to your Telegram chat
-- Review scores are posted after each review
-- You can send messages back to inject instructions mid-run
+配好 channel daemon 之后：
+- 每轮的产出会转发到你的 Telegram
+- 评审分数在每次 review 后推送
+- 你可以在 Telegram 里发消息，实时注入指令给 agent
 
 ---
 
-## Patterns That Work
+## 实战经验
 
-1. **Start with `demo`, upgrade to `mvp`** — get the shape right first, then harden
-2. **One GOAL per session** — don't mix "add payments" with "fix auth bugs"
-3. **Specific success criteria** — "login works" is vague; "POST /api/login returns 200 with JWT" is testable
-4. **Include existing test commands** — the reviewer needs to know how to run your tests
-5. **Set max-turns for prototypes** — prevents runaway iteration on throwaway code
+1. **先 `demo` 再升 `mvp`** —— 先跑通主流程，再打磨质量
+2. **一个 GOAL 一个会话** —— 不要把"加支付"和"修登录 bug"混在一起
+3. **写具体的成功标准** —— "登录能用"太模糊；"POST /api/login 返回 200 + JWT"可验证
+4. **写明测试命令** —— 评审员需要知道怎么跑你的测试
+5. **原型项目限制 max-turns** —— 防止在一次性代码上无限迭代
