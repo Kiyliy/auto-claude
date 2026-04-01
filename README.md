@@ -1,6 +1,18 @@
 # auto-claude
 
-Autonomous AI development framework built on [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Define a goal, let the agent build it, and an independent reviewer scores the result — iterating until it passes.
+Autonomous AI development framework built on [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+
+## Core Idea
+
+A simple syllogism:
+
+1. **Any goal can be scored.** Whether it's "build a login page" or "migrate to TypeScript" — you can verify the result through tests, endpoint checks, or end-to-end usage, and convert that into a number.
+2. **AI can improve iteratively toward a target score.** Given specific feedback ("auth returns 401", "3 tests failing", "mobile layout broken"), an LLM can diagnose and fix — just like a human developer reading a code review.
+3. **Therefore, build the loop.** If the goal is scorable and the agent is improvable, the only thing missing is the loop: work → score → feedback → repeat until pass.
+
+That's all auto-claude is: **the loop**.
+
+You define the goal (`GOAL.md`), the framework scores it (independent reviewer, 10 dimensions, 0-100), and feeds the result back. The agent keeps working until the score crosses the threshold — or you tell it to stop.
 
 ## How it works
 
