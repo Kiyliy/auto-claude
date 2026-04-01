@@ -21,6 +21,9 @@ Next.js + TypeScript + Tailwind CSS + SQLite
 - Core flow fully working
 - One-command start works
 
+## Agent Loop
+See [agentloop.md](agentloop.md) — defines how the agent should operate, what tools and skills to use, and how to handle failures.
+
 ## Rules
 - Git commit after each batch of changes
 - Make decisions autonomously, do not stop to ask
